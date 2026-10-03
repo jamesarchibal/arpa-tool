@@ -1,0 +1,410 @@
+#!/usr/bin/env node
+//
+// ARPA origination · BORME free probe.
+//
+// Question this answers: does the Spanish company registry publish enough
+// pre-sale behaviour, for free, to rank 1.1M companies down to a shortlist?
+//
+// BORME (Boletin Oficial del Registro Mercantil) is an official bulletin that
+// is published to be read, so reading it is not scraping and not the prohibited
+// "peticion en masa" of the registry itself (DGRN Instruccion 17-feb-1998).
+// It is served as structured XML, one document per province per publishing day:
+//
+//   sumario   GET https://www.boe.es/datosabiertos/api/borme/sumario/YYYYMMDD
+//             (Accept: application/json)
+//   seccion A GET https://www.boe.es/diario_borme/xml.php?id=BORME-A-YYYY-NNN-PP
+//
+// Section A is "Empresarios. Actos inscritos", which is the only section that
+// carries the Tier 1 plumbing. Section B is other published acts, section C is
+// legal notices.
+//
+// PRIVACY. Section A names natural persons (administrators, attorneys, the
+// deceased). This probe never writes a personal name to disk or to the report.
+// It records the ACT and the COMPANY only. Owner-age style features stay out
+// until ARPA's counsel signs a legitimate interest assessment.
+//
+// Usage
+//   node scripts/borme-probe.mjs labels --from 2026-09-01 --to 2026-09-30
+//   node scripts/borme-probe.mjs tier1  --from 2026-09-01 --to 2026-09-30
+//   node scripts/borme-probe.mjs tier1  --from 2026-09-01 --to 2026-09-30 \
+//        --province ALICANTE,VALENCIA --out /tmp/borme-tier1.json
+//
+// labels = measure the act vocabulary, so the Tier 1 patterns are grounded in
+//          what BORME actually prints instead of what we assume it prints.
+// tier1  = score companies on pre-sale behaviour and report volume.
+//
+// Cost: zero. No API key, no credits. Cached under .borme-cache/.
+
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import path from 'node:path'
+
+const CACHE = path.join(process.cwd(), '.borme-cache')
+const SUMARIO = (ymd) => `https://www.boe.es/datosabiertos/api/borme/sumario/${ymd}`
+const CONCURRENCY = 6
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tier 1 · pre-sale plumbing.
+//
+// EVERY rule below was measured against two real publishing days before it was
+// kept, so the vocabulary is BORME's, not ours. Four signals from the original
+// plan were DROPPED because BORME does not print them. Do not add them back
+// without re-measuring:
+//
+//   aportacion no dineraria   0 occurrences. A capital increase funded with
+//                             shares prints only as "Ampliacion de capital",
+//                             the non-cash nature is not published. The plan
+//                             called this "the strongest single signal". It is
+//                             not observable here. `holding_admin` replaces it.
+//   fallecimiento             0 occurrences. Inheritance is not published as a
+//                             cause of cese. Not observable.
+//   director general /        0 occurrences. Not in BORME's cargo vocabulary,
+//   consejero delegado        which is Adm. Unico / Adm. Solid. / Adm. Mancom. /
+//                             Consejero / Apoderado / Auditor / Liquidador.
+//   prima de emision          0 occurrences. Not published.
+//
+// `weight` is a first guess. It must be recalibrated against real closed deals
+// before anyone treats the score as a ranking rather than a sort order.
+// ─────────────────────────────────────────────────────────────────────────────
+const RULES = [
+  // A LEGAL person appointed as sole or joint administrator. This is the
+  // holding-insertion fingerprint that is actually observable: once the owner
+  // puts a holdco above the opco, the holdco becomes the administrator.
+  // It is also GDPR-safe, because the appointee is a company, not a person.
+  { id: 'holding_admin', weight: 5, label: 'Corporate administrator appointed (holdco above the opco)',
+    raw: true,
+    re: /(?:Nombramientos|Reelecciones)\.\s*(?:Adm\.\s*(?:Unico|Solid\.|Mancom\.)|ADM\.UNICO|ADM\.SOLIDAR\.)\s*:\s*[^;.]*?\b(?:S\.?L\.?U?\.?|S\.?A\.?U?\.?|SOCIEDAD\s+(?:LIMITADA|ANONIMA|DE\s+RESPONSABILIDAD)|HOLDING)\b/i },
+
+  // Opco survives and a branch (usually the property) is carved out.
+  { id: 'escision_parcial', weight: 5, label: 'Escision parcial / segregacion (carve-out, opco survives)',
+    re: /escisi[oó]n\s+parcial|segregaci[oó]n/i, survivesExclude: true },
+
+  // Opco is split into beneficiary companies and dies. The BENEFICIARIES are
+  // the new targets, and their names are printed in the same paragraph.
+  { id: 'escision_total', weight: 4, label: 'Escision total (opco split, beneficiaries are the new targets)',
+    re: /escisi[oó]n\s+total/i, survivesExclude: true },
+
+  // Buying a clean audit before anyone asks for one.
+  { id: 'auditor', weight: 4, label: 'Auditor appointed or changed',
+    re: /\bauditor\b|AUDIT\.CUENT|\bAud\.\s*:/i },
+
+  { id: 'transformacion', weight: 4, label: 'Transformacion de sociedad (SL to SA and back)',
+    re: /transformaci[oó]n\s+de\s+sociedad/i },
+
+  // Cash out. BORME rarely prints the cause, so this is capital reduction of
+  // any kind and it needs a second signal to mean anything.
+  { id: 'reduccion_capital', weight: 3, label: 'Reduccion de capital',
+    re: /reducci[oó]n\s+de\s+capital/i },
+
+  // Administrador unico becomes a board. Professionalising governance.
+  { id: 'consejo', weight: 3, label: 'Consejero appointed or ceased (board governance)',
+    re: /\bconsejer/i },
+
+  // A minority entered, so somebody already sold part of it.
+  { id: 'unipersonalidad_perdida', weight: 3, label: 'Perdida del caracter de unipersonalidad (minority came in)',
+    re: /p[eé]rdida\s+del\s+car[aá]cter\s+de\s+unipersonalidad/i },
+
+  { id: 'socio_unico_cambio', weight: 3, label: 'Cambio de identidad del socio unico (owner changed)',
+    re: /cambio\s+de\s+identidad\s+del\s+socio/i },
+
+  // The absorbing company is a consolidator. This is the feed for the
+  // consolidation map, which is the highest-ROI play in the plan.
+  { id: 'fusion_absorcion', weight: 3, label: 'Fusion por absorcion (absorber is a consolidator)',
+    re: /fusi[oó]n\s+por\s+absorci[oó]n/i, survivesExclude: true },
+
+  // Very common (about 300 a day), so on its own it is noise. Kept at weight 1
+  // purely as a co-occurrence tiebreak. We never record WHO, because that
+  // would be a natural person and would need the legitimate interest
+  // assessment the plan flags.
+  { id: 'apoderado', weight: 1, label: 'Apoderado appointed (noisy, tiebreak only)',
+    re: /(?:Nombramientos|Reelecciones)\.\s*(?:Apoderado|Apo\.|APODERAD)/i },
+]
+
+// Acts that mean the opposite of a sale candidate. A company is dropped only
+// when it matches one of these AND no rule marked survivesExclude fired, so a
+// restructuring split is kept while a plain liquidation is not.
+const EXCLUDE = [
+  { id: 'constitucion', re: /^\s*constituci[oó]n\b/i },
+  { id: 'extincion', re: /\bextinci[oó]n\b/i },
+  { id: 'disolucion', re: /\bdisoluci[oó]n\b/i },
+  { id: 'liquidacion', re: /\bliquidador\b/i },
+  { id: 'concursal', re: /situaci[oó]n\s+concursal|concurso\s+de\s+acreedores|Administrador\s+Concursal/i },
+  { id: 'erratas', re: /^\s*Fe\s+de\s+erratas/i },
+]
+
+// ─────────────────────────────────────────────────────────────────────────────
+// fetch helpers
+// ─────────────────────────────────────────────────────────────────────────────
+async function getCached (url, key) {
+  const file = path.join(CACHE, key)
+  if (existsSync(file)) return readFile(file, 'utf8')
+  const res = await fetch(url, {
+    headers: { Accept: 'application/json, application/xml;q=0.9', 'User-Agent': 'arpa-borme-probe/1' },
+  })
+  if (!res.ok) throw Object.assign(new Error(`${res.status} ${url}`), { status: res.status })
+  const body = await res.text()
+  await mkdir(path.dirname(file), { recursive: true })
+  await writeFile(file, body)
+  return body
+}
+
+async function pool (items, worker) {
+  const out = []
+  let next = 0
+  await Promise.all(Array.from({ length: CONCURRENCY }, async () => {
+    while (next < items.length) {
+      const i = next++
+      try { out[i] = await worker(items[i]) } catch (err) { out[i] = { error: err } }
+    }
+  }))
+  return out
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// parsing
+// ─────────────────────────────────────────────────────────────────────────────
+const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' }
+
+function decode (s) {
+  return s
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+    .replace(/&(amp|lt|gt|quot|apos|nbsp);/g, (_, n) => ENTITIES[n])
+}
+
+// One BORME section-A document becomes a list of { reg, name, text }.
+// Layout is strictly alternating:
+//   <p class="articulo">439716 - EQUELITE SL.</p>
+//   <p class="parrafo">Ampliacion de capital. ... Datos registrales. S 8 , H A 12708, I/A 16 (25.09.26).</p>
+function parseSectionA (xml) {
+  const province = decode((xml.match(/<titulo>([\s\S]*?)<\/titulo>/) || [])[1] || '').trim()
+  const date = (xml.match(/<fecha_publicacion>(\d{8})<\/fecha_publicacion>/) || [])[1] || ''
+  const entries = []
+  const re = /<p class="(articulo|parrafo)">([\s\S]*?)<\/p>/g
+  let m
+  let current = null
+  while ((m = re.exec(xml))) {
+    const body = decode(m[2].replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim()
+    if (m[1] === 'articulo') {
+      const head = body.match(/^(\d+)\s*-\s*(.+?)\.?$/)
+      current = { reg: head ? head[1] : null, name: head ? head[2] : body, province, date, text: '' }
+      entries.push(current)
+    } else if (current) {
+      current.text = current.text ? `${current.text} ${body}` : body
+    }
+  }
+  return entries
+}
+
+// `Datos registrales. S 8 , H A 208326, I/A 1 (25.09.26).`
+// BORME does NOT publish the CIF. The durable key is the registry sheet
+// (province + hoja), not the tax number. That is a correction to the plan:
+// joining BORME to a bought XBRL deposit needs a name or hoja match, not a CIF.
+function registryKey (text, province) {
+  const m = text.match(/Datos registrales\.\s*S\s*(\d+)\s*,\s*H\s*([A-Z]{1,3})\s*(\d+)/i)
+  if (!m) return null
+  return { seccion: m[1], hoja: `${m[2]} ${m[3]}`, key: `${province}|${m[2]}${m[3]}` }
+}
+
+// Strip anything that follows a cargo label, because that is a person's name.
+// Keeps the act vocabulary and drops the natural persons.
+function redact (text) {
+  return text.replace(
+    /((?:Adm\.?\s*(?:Unico|Solid\.?|Conj\.?|Mancom\.?)?|Consejero(?:\s+Delegado)?|Apoderado|Auditor|Liquidador|Secretario|Presidente|Vicepresident\w*|Vicesecretari\w*|Socio\s+Unico)\s*:\s*)[^.]*/gi,
+    '$1[persona]',
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ingest
+// ─────────────────────────────────────────────────────────────────────────────
+function* dateRange (from, to) {
+  for (const d = new Date(`${from}T00:00:00Z`); d <= new Date(`${to}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1)) {
+    yield d.toISOString().slice(0, 10)
+  }
+}
+
+async function sectionADocs (iso) {
+  const ymd = iso.replaceAll('-', '')
+  let raw
+  try {
+    raw = await getCached(SUMARIO(ymd), path.join(ymd, 'sumario.json'))
+  } catch (err) {
+    if (err.status === 404) return []          // not a publishing day
+    throw err
+  }
+  const json = JSON.parse(raw)
+  if (json?.status?.code !== '200') return []
+  const diarios = json?.data?.sumario?.diario || []
+  const out = []
+  for (const diario of diarios) {
+    for (const sec of diario.seccion || []) {
+      if (sec.codigo !== 'A') continue
+      for (const item of [].concat(sec.item || [])) {
+        out.push({ iso, ymd, id: item.identificador, titulo: item.titulo, url: item.url_xml })
+      }
+    }
+  }
+  return out
+}
+
+async function ingest (from, to, provinceFilter) {
+  const days = [...dateRange(from, to)]
+  process.stderr.write(`sumario: ${days.length} days ${from} to ${to}\n`)
+  const perDay = await pool(days, (iso) => sectionADocs(iso))
+
+  let docs = perDay.flatMap((d) => (Array.isArray(d) ? d : []))
+  if (provinceFilter) {
+    const want = provinceFilter.map((p) => p.toUpperCase())
+    docs = docs.filter((d) => want.some((w) => d.titulo.toUpperCase().includes(w)))
+  }
+  const publishingDays = new Set(docs.map((d) => d.iso)).size
+  process.stderr.write(`section A: ${docs.length} province docs over ${publishingDays} publishing days\n`)
+
+  const parsed = await pool(docs, async (d) => {
+    const xml = await getCached(d.url, path.join(d.ymd, `${d.id}.xml`))
+    return parseSectionA(xml)
+  })
+
+  const entries = []
+  let failed = 0
+  for (const p of parsed) {
+    if (!Array.isArray(p)) { failed++; continue }
+    entries.push(...p)
+  }
+  if (failed) process.stderr.write(`WARNING: ${failed} documents failed to fetch or parse\n`)
+  process.stderr.write(`entries: ${entries.length} inscribed acts\n\n`)
+  return { entries, publishingDays }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// mode: labels
+// ─────────────────────────────────────────────────────────────────────────────
+function runLabels (entries) {
+  const counts = new Map()
+  for (const e of entries) {
+    // Act labels are a closed vocabulary printed as "Label. detail." segments.
+    for (const m of redact(e.text).matchAll(/(?:^|\.\s|\.-\s{0,2})([A-ZÁÉÍÓÚÑ][^.;:]{2,58}?)[.:]/g)) {
+      const label = m[1].trim()
+      if (/\d/.test(label)) continue
+      counts.set(label, (counts.get(label) || 0) + 1)
+    }
+  }
+  const rows = [...counts].sort((a, b) => b[1] - a[1]).slice(0, 90)
+  console.log(`act label frequency, top ${rows.length} of ${counts.size} distinct\n`)
+  const pad = Math.max(...rows.map((r) => r[0].length))
+  for (const [label, n] of rows) console.log(`${String(n).padStart(7)}  ${label.padEnd(pad)}`)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// mode: tier1
+// ─────────────────────────────────────────────────────────────────────────────
+function runTier1 (entries, publishingDays, outFile) {
+  const companies = new Map()
+  let excluded = 0
+
+  for (const e of entries) {
+    const text = redact(e.text)
+    // A rule marked `raw` is tested against the unredacted act, because telling
+    // a company appointee from a natural person needs the appointee string.
+    // Nothing from the raw text is ever stored or printed.
+    const fired = RULES.filter((r) => r.re.test(r.raw ? e.text : text))
+    if (!fired.length) continue
+
+    if (EXCLUDE.some((x) => x.re.test(text)) && !fired.some((r) => r.survivesExclude)) {
+      excluded++
+      continue
+    }
+    const hit = fired.map((r) => r.id)
+
+    const reg = registryKey(e.text, e.province)
+    const key = reg ? reg.key : `${e.province}|name:${e.name}`
+    const row = companies.get(key) || {
+      name: e.name, province: e.province, hoja: reg?.hoja || null,
+      rules: new Set(), events: [],
+    }
+    for (const h of hit) row.rules.add(h)
+    row.events.push({ date: e.date, rules: hit })
+    companies.set(key, row)
+  }
+
+  const ruleCount = new Map(RULES.map((r) => [r.id, 0]))
+  const byProvince = new Map()
+  const ranked = []
+
+  for (const row of companies.values()) {
+    for (const id of row.rules) ruleCount.set(id, ruleCount.get(id) + 1)
+    const score = [...row.rules].reduce((s, id) => s + RULES.find((r) => r.id === id).weight, 0)
+    const p = byProvince.get(row.province) || { total: 0, multi: 0 }
+    p.total++
+    if (row.rules.size >= 2) p.multi++
+    byProvince.set(row.province, p)
+    ranked.push({
+      name: row.name, province: row.province, hoja: row.hoja,
+      rules: [...row.rules], distinct: row.rules.size, score,
+      dates: [...new Set(row.events.map((e) => e.date))].sort(),
+    })
+  }
+  ranked.sort((a, b) => b.score - a.score || b.distinct - a.distinct)
+
+  const multi2 = ranked.filter((r) => r.distinct >= 2)
+  const multi3 = ranked.filter((r) => r.distinct >= 3)
+
+  console.log('TIER 1 PRE-SALE SIGNAL · BORME seccion A\n')
+  console.log(`publishing days          ${publishingDays}`)
+  console.log(`inscribed acts read      ${entries.length}`)
+  console.log(`dropped as wrong-way     ${excluded}  (constitucion / disolucion / extincion / concurso)`)
+  console.log(`companies with >=1 rule  ${ranked.length}`)
+  console.log(`companies with >=2 rules ${multi2.length}   <- "a process already running"`)
+  console.log(`companies with >=3 rules ${multi3.length}   <- highest conviction\n`)
+
+  console.log('by rule (companies, not events)\n')
+  const rw = Math.max(...RULES.map((r) => r.label.length))
+  for (const r of RULES) {
+    console.log(`${String(ruleCount.get(r.id)).padStart(7)}  w${r.weight}  ${r.label.padEnd(rw)}`)
+  }
+
+  console.log('\ntop 15 provinces by companies with >=1 rule\n')
+  const prov = [...byProvince].sort((a, b) => b[1].total - a[1].total).slice(0, 15)
+  const pw = Math.max(...prov.map((p) => p[0].length))
+  console.log(`${'province'.padEnd(pw)}   >=1    >=2`)
+  for (const [name, p] of prov) {
+    console.log(`${name.padEnd(pw)}  ${String(p.total).padStart(4)}  ${String(p.multi).padStart(5)}`)
+  }
+
+  console.log('\ntop 25 named candidates\n')
+  for (const r of multi2.slice(0, 25)) {
+    console.log(`${String(r.score).padStart(3)}  ${r.distinct}x  ${r.province.padEnd(18)} ${r.name}`)
+    console.log(`          ${r.rules.join(', ')}`)
+  }
+
+  if (outFile) {
+    const json = JSON.stringify({
+      generated_at: new Date().toISOString(),
+      publishing_days: publishingDays,
+      acts_read: entries.length,
+      rules: RULES.map((r) => ({ id: r.id, weight: r.weight, label: r.label })),
+      companies: ranked,
+    }, null, 2)
+    return writeFile(outFile, json).then(() => {
+      console.log(`\nwrote ${ranked.length} companies to ${outFile}`)
+    })
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+function args () {
+  const [mode, ...rest] = process.argv.slice(2)
+  const flags = {}
+  for (let i = 0; i < rest.length; i += 2) flags[rest[i].replace(/^--/, '')] = rest[i + 1]
+  if (!['labels', 'tier1'].includes(mode) || !flags.from || !flags.to) {
+    console.error('usage: node scripts/borme-probe.mjs <labels|tier1> --from YYYY-MM-DD --to YYYY-MM-DD [--province A,B] [--out file.json]')
+    process.exit(1)
+  }
+  return { mode, from: flags.from, to: flags.to, out: flags.out, province: flags.province?.split(',') }
+}
+
+const { mode, from, to, out, province } = args()
+const { entries, publishingDays } = await ingest(from, to, province)
+if (mode === 'labels') runLabels(entries)
+else await runTier1(entries, publishingDays, out)
