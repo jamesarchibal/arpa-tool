@@ -24,18 +24,26 @@
 // until ARPA's counsel signs a legitimate interest assessment.
 //
 // Usage
-//   node scripts/borme-probe.mjs labels --from 2026-09-01 --to 2026-09-30
-//   node scripts/borme-probe.mjs tier1  --from 2026-09-01 --to 2026-09-30
-//   node scripts/borme-probe.mjs tier1  --from 2026-09-01 --to 2026-09-30 \
+//   node scripts/borme-probe.mjs labels  --from 2026-09-01 --to 2026-09-30
+//   node scripts/borme-probe.mjs tier1   --from 2026-09-01 --to 2026-09-30
+//   node scripts/borme-probe.mjs tier1   --from 2026-09-01 --to 2026-09-30 \
 //        --province ALICANTE,VALENCIA --out /tmp/borme-tier1.json
+//   node scripts/borme-probe.mjs sectors --from 2009-01-01 --to 2026-09-30 \
+//        --jsonl /tmp/borme-sectors.jsonl --no-cache
 //
-// labels = measure the act vocabulary, so the Tier 1 patterns are grounded in
-//          what BORME actually prints instead of what we assume it prints.
-// tier1  = score companies on pre-sale behaviour and report volume.
+// labels  = measure the act vocabulary, so the Tier 1 patterns are grounded in
+//           what BORME actually prints instead of what we assume it prints.
+// tier1   = score companies on pre-sale behaviour and report volume.
+// sectors = build the company -> sector map. Tier 1 tells us a company is
+//           moving, but not WHAT IT DOES: BORME prints `Objeto social` only on
+//           `Constitucion` and `Cambio de objeto social`, so the sector has to
+//           be harvested from those two acts across every year and remembered.
+//           Streams day by day and appends JSONL, so a multi-year run is
+//           resumable and does not need the 28MB-per-month XML cache.
 //
 // Cost: zero. No API key, no credits. Cached under .borme-cache/.
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 
@@ -133,8 +141,83 @@ const EXCLUDE = [
 ]
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Sector classifier · ARPA taxonomy (arpa_taxonomy, 20 subsectors).
+//
+// Matched against the `Objeto social` free text, NOT against CNAE. Measured on
+// September 2026: 9,614 acts print an objeto social, but only 3,141 mention
+// CNAE at all and only 1,982 give a 4-digit code, and the code is written four
+// different ways. The prose is the field that is actually there.
+//
+// A company can match more than one row. We keep every match and report the
+// first as the primary, because "valves AND filtration" is information, not an
+// error.
+// ─────────────────────────────────────────────────────────────────────────────
+const TAXONOMY = [
+  { sub: 'Olives / olive oil farming', sector: 'Agribusiness',
+    re: /\bolivar|olivicultura|cultivo\s+del?\s+olivo/i },
+  { sub: 'Citrus / fruit production', sector: 'Agribusiness',
+    re: /c[ií]tricos|citr[ií]cola|cultivo\s+de\s+(?:naranj|mandarin|frutal)|explotaci[oó]n\s+frut[ií]cola/i },
+  { sub: 'Fertilizers / soil enhancers', sector: 'Agribusiness',
+    re: /fertilizante|abonos?\s+(?:agr[ií]cola|org[aá]nico|mineral|qu[ií]mico)|enmiendas?\s+del?\s+suelo/i },
+  { sub: 'Biological inputs / biostimulants', sector: 'Agribusiness',
+    re: /bioestimulante|bioplaguicida|control\s+biol[oó]gico\s+de\s+plagas|insumos?\s+biol[oó]gicos/i },
+  { sub: 'Drip irrigation systems', sector: 'Agribusiness',
+    re: /riego\s+(?:por\s+goteo|localizado)|sistemas?\s+de\s+riego|instalaciones?\s+de\s+riego/i },
+  { sub: 'Pumps / filtration / dosing', sector: 'Agribusiness',
+    re: /bombas?\s+(?:de\s+agua|hidr[aá]ulicas?)|equipos?\s+de\s+(?:filtraci[oó]n|dosificaci[oó]n)|dosificaci[oó]n\s+de\s+fertilizantes/i },
+  { sub: 'Specialized farm machinery', sector: 'Agribusiness',
+    re: /maquinaria\s+(?:agr[ií]cola|para\s+la\s+agricultura)|aperos\s+agr[ií]colas/i },
+  { sub: 'Olive oil mills / processing', sector: 'Agribusiness',
+    re: /almazara|molturaci[oó]n|extracci[oó]n\s+de\s+aceite|elaboraci[oó]n\s+de\s+aceite\s+de\s+oliva/i },
+  { sub: 'Fruit / vegetable processing', sector: 'Agribusiness',
+    re: /conservas\s+vegetales|(?:transformaci[oó]n|procesado|manipulaci[oó]n)\s+de\s+(?:frutas?|hortalizas?|verduras?)|central\s+hortofrut[ií]cola/i },
+  { sub: 'Testing / certification / agronomic services', sector: 'Agribusiness',
+    re: /asesoramiento\s+agron[oó]mico|servicios?\s+agron[oó]micos?|an[aá]lisis\s+(?:agr[ií]cola|de\s+suelos)|certificaci[oó]n\s+agroalimentaria/i },
+
+  { sub: 'Precision machined parts', sector: 'Industrial Products',
+    re: /mecanizad|decoletaje|piezas?\s+de\s+precisi[oó]n|torneado|fresado/i },
+  { sub: 'Valves / pumps / hydraulic systems', sector: 'Industrial Products',
+    re: /v[aá]lvulas?|sistemas?\s+(?:hidr[aá]ulicos?|neum[aá]ticos?)|bombas?\s+industriales/i },
+  { sub: 'Metal fabrication / stamping', sector: 'Industrial Products',
+    re: /calder[ei]r[ií]a|estampaci[oó]n|chapa\s+met[aá]lica|carpinter[ií]a\s+met[aá]lica|construcciones?\s+met[aá]licas/i },
+  { sub: 'Technical plastics / injection molding', sector: 'Industrial Products',
+    re: /inyecci[oó]n\s+de\s+(?:pl[aá]sticos?|pl[aá]stico)|pl[aá]sticos?\s+t[eé]cnicos?|moldeo\s+de\s+pl[aá]stico|transformaci[oó]n\s+de\s+materias\s+pl[aá]sticas/i },
+  { sub: 'Industrial packaging', sector: 'Industrial Products',
+    re: /embalajes?\s+industrial|cart[oó]n\s+ondulado|pal[eé]ts?\b|fabricaci[oó]n\s+de\s+(?:envases|embalajes)/i },
+  { sub: 'Food/agri packaging', sector: 'Industrial Products',
+    re: /envases?\s+(?:alimentari|para\s+la\s+alimentaci[oó]n)|packaging\s+alimentari/i },
+  { sub: 'Food processing machinery', sector: 'Industrial Products',
+    re: /maquinaria\s+(?:alimentaria|para\s+la\s+industria\s+alimentaria|de\s+procesado\s+de\s+alimentos)/i },
+  { sub: 'Packaging machinery', sector: 'Industrial Products',
+    re: /maquinaria\s+de\s+(?:envasado|embalaje)|m[aá]quinas?\s+envasadoras?/i },
+  { sub: 'Filtration / recycling / waste systems', sector: 'Industrial Products',
+    re: /tratamiento\s+de\s+(?:residuos|aguas)|reciclaje|depuraci[oó]n|gesti[oó]n\s+de\s+residuos/i },
+  { sub: 'Electrical cabinets / solar mounting', sector: 'Industrial Products',
+    re: /cuadros?\s+el[eé]ctricos?|estructuras?\s+(?:solares?|fotovoltaicas?)|soportes?\s+fotovoltaicos?/i },
+]
+
+// The >=3-signal shortlist was dominated by patrimonial and real-estate
+// vehicles doing ordinary restructuring. This is the negative filter for them.
+// It is a FLAG, not a drop, because a real opco can hold its own building.
+const PATRIMONIAL = /tenencia\s+y\s+(?:administraci[oó]n|gesti[oó]n)\s+de\s+(?:acciones|participaciones|valores)|promoci[oó]n\s+inmobiliaria|arrendamiento\s+de\s+(?:bienes\s+)?inmuebles|sociedad\s+patrimonial|compraventa\s+de\s+(?:bienes\s+)?inmuebles/i
+
+function classify (objeto) {
+  const hits = TAXONOMY.filter((t) => t.re.test(objeto))
+  return {
+    subsectors: hits.map((t) => t.sub),
+    sector: hits[0]?.sector || null,
+    patrimonial: PATRIMONIAL.test(objeto),
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // fetch helpers
 // ─────────────────────────────────────────────────────────────────────────────
+// A multi-year run would write about 6GB of XML we only read once, so
+// `--no-cache` reads through without keeping it. Already-cached days are still
+// served from disk, which makes a re-run of a cached month free.
+let NOCACHE = false
+
 async function getCached (url, key) {
   const file = path.join(CACHE, key)
   if (existsSync(file)) return readFile(file, 'utf8')
@@ -143,6 +226,7 @@ async function getCached (url, key) {
   })
   if (!res.ok) throw Object.assign(new Error(`${res.status} ${url}`), { status: res.status })
   const body = await res.text()
+  if (NOCACHE) return body
   await mkdir(path.dirname(file), { recursive: true })
   await writeFile(file, body)
   return body
@@ -204,6 +288,26 @@ function registryKey (text, province) {
   const m = text.match(/Datos registrales\.\s*S\s*(\d+)\s*,\s*H\s*([A-Z]{1,3})\s*(\d+)/i)
   if (!m) return null
   return { seccion: m[1], hoja: `${m[2]} ${m[3]}`, key: `${province}|${m[2]}${m[3]}` }
+}
+
+// `Objeto social: La fabricacion y venta de productos de pasteleria. Domicilio: ...`
+// The objeto is free prose and contains its own full stops, so it is read up to
+// the next act label rather than up to the next period.
+const OBJETO_END = /\s(?:Domicilio|Capital|Datos registrales|Nombramientos|Ceses|Declaraci[oó]n\s+de\s+unipersonalidad|Socio\s+[UÚ]nico|Modificaciones|Cambio\s+de|Reelecciones|Revocaciones|Apoderado)\b/
+
+function objetoSocial (text) {
+  const i = text.search(/Objeto social\s*:/i)
+  if (i < 0) return null
+  const after = text.slice(i).replace(/^Objeto social\s*:\s*/i, '')
+  const end = after.search(OBJETO_END)
+  return (end > 0 ? after.slice(0, end) : after).trim().slice(0, 600) || null
+}
+
+// CNAE is printed four different ways and is missing from two acts in three,
+// so it is recorded opportunistically and never relied on.
+function cnae (text) {
+  const m = text.match(/CNAE[^0-9]{0,40}(\d{4})/i) || text.match(/CNAE[^0-9]{0,10}(\d{2})\b/i)
+  return m ? m[1] : null
 }
 
 // Strip anything that follows a cargo label, because that is a person's name.
@@ -393,18 +497,112 @@ function runTier1 (entries, publishingDays, outFile) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// mode: sectors
+//
+// Runs its own day-by-day loop instead of `ingest`, because a 2009-to-today
+// backfill is about 130,000 province documents and must not be held in memory
+// or re-fetched after a crash. Each finished day is written to <jsonl>.days,
+// and a restart skips those days.
+// ─────────────────────────────────────────────────────────────────────────────
+async function runSectors (from, to, provinceFilter, jsonlFile) {
+  if (!jsonlFile) throw new Error('sectors mode needs --jsonl <file>')
+  const daysFile = `${jsonlFile}.days`
+  const done = existsSync(daysFile)
+    ? new Set((await readFile(daysFile, 'utf8')).split('\n').filter(Boolean))
+    : new Set()
+
+  const days = [...dateRange(from, to)].filter((d) => !done.has(d))
+  process.stderr.write(`sectors: ${days.length} days to do, ${done.size} already done\n`)
+
+  const totals = { docs: 0, acts: 0, objetos: 0, matched: 0, patrimonial: 0 }
+  const bySub = new Map()
+
+  for (const iso of days) {
+    let docs = await sectionADocs(iso)
+    if (provinceFilter) {
+      const want = provinceFilter.map((p) => p.toUpperCase())
+      docs = docs.filter((d) => want.some((w) => d.titulo.toUpperCase().includes(w)))
+    }
+    const parsed = await pool(docs, async (d) => {
+      const xml = await getCached(d.url, path.join(d.ymd, `${d.id}.xml`))
+      return parseSectionA(xml)
+    })
+
+    const lines = []
+    for (const p of parsed) {
+      if (!Array.isArray(p)) continue
+      totals.docs++
+      for (const e of p) {
+        totals.acts++
+        const objeto = objetoSocial(e.text)
+        if (!objeto) continue
+        totals.objetos++
+        const c = classify(objeto)
+        if (c.subsectors.length) totals.matched++
+        if (c.patrimonial) totals.patrimonial++
+        for (const s of c.subsectors) bySub.set(s, (bySub.get(s) || 0) + 1)
+        const reg = registryKey(e.text, e.province)
+        lines.push(JSON.stringify({
+          key: reg ? reg.key : `${e.province}|name:${e.name}`,
+          name: e.name, province: e.province, hoja: reg?.hoja || null,
+          date: e.date, cnae: cnae(e.text), objeto,
+          sector: c.sector, subsectors: c.subsectors, patrimonial: c.patrimonial,
+        }))
+      }
+    }
+    if (lines.length) await appendFile(jsonlFile, `${lines.join('\n')}\n`)
+    await appendFile(daysFile, `${iso}\n`)
+
+    if (iso.endsWith('-01')) {
+      process.stderr.write(`  ${iso.slice(0, 7)}  objetos ${totals.objetos}  matched ${totals.matched}\n`)
+    }
+  }
+
+  console.log('\nSECTOR MAP · BORME objeto social\n')
+  console.log(`province docs read       ${totals.docs}`)
+  console.log(`inscribed acts read      ${totals.acts}`)
+  console.log(`acts with objeto social  ${totals.objetos}`)
+  console.log(`matched an ARPA subsector ${totals.matched}`)
+  console.log(`flagged patrimonial      ${totals.patrimonial}\n`)
+  if (bySub.size) {
+    const rows = [...bySub].sort((a, b) => b[1] - a[1])
+    const w = Math.max(...rows.map((r) => r[0].length))
+    console.log('by subsector (acts)\n')
+    for (const [sub, n] of rows) console.log(`${String(n).padStart(7)}  ${sub.padEnd(w)}`)
+  }
+  console.log(`\nappended to ${jsonlFile}`)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 function args () {
   const [mode, ...rest] = process.argv.slice(2)
   const flags = {}
-  for (let i = 0; i < rest.length; i += 2) flags[rest[i].replace(/^--/, '')] = rest[i + 1]
-  if (!['labels', 'tier1'].includes(mode) || !flags.from || !flags.to) {
-    console.error('usage: node scripts/borme-probe.mjs <labels|tier1> --from YYYY-MM-DD --to YYYY-MM-DD [--province A,B] [--out file.json]')
+  for (let i = 0; i < rest.length; i++) {
+    if (!rest[i].startsWith('--')) continue
+    const name = rest[i].replace(/^--/, '')
+    const next = rest[i + 1]
+    if (next === undefined || next.startsWith('--')) flags[name] = true
+    else { flags[name] = next; i++ }
+  }
+  if (!['labels', 'tier1', 'sectors'].includes(mode) || !flags.from || !flags.to) {
+    console.error('usage: node scripts/borme-probe.mjs <labels|tier1|sectors> --from YYYY-MM-DD --to YYYY-MM-DD')
+    console.error('       [--province A,B] [--out file.json] [--jsonl file.jsonl] [--no-cache]')
     process.exit(1)
   }
-  return { mode, from: flags.from, to: flags.to, out: flags.out, province: flags.province?.split(',') }
+  return {
+    mode, from: flags.from, to: flags.to, out: flags.out, jsonl: flags.jsonl,
+    province: typeof flags.province === 'string' ? flags.province.split(',') : undefined,
+    noCache: flags['no-cache'] === true,
+  }
 }
 
-const { mode, from, to, out, province } = args()
-const { entries, publishingDays } = await ingest(from, to, province)
-if (mode === 'labels') runLabels(entries)
-else await runTier1(entries, publishingDays, out)
+const { mode, from, to, out, jsonl, province, noCache } = args()
+NOCACHE = noCache
+
+if (mode === 'sectors') {
+  await runSectors(from, to, province, jsonl)
+} else {
+  const { entries, publishingDays } = await ingest(from, to, province)
+  if (mode === 'labels') runLabels(entries)
+  else await runTier1(entries, publishingDays, out)
+}
