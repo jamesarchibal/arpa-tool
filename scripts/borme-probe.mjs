@@ -178,8 +178,12 @@ const TAXONOMY = [
     re: /mecanizad|decoletaje|piezas?\s+de\s+precisi[oó]n|torneado|fresado/i },
   { sub: 'Valves / pumps / hydraulic systems', sector: 'Industrial Products',
     re: /v[aá]lvulas?|sistemas?\s+(?:hidr[aá]ulicos?|neum[aá]ticos?)|bombas?\s+industriales/i },
+  // NOT `carpinteria metalica` or `construcciones metalicas`. Measured: those
+  // two phrases are the standard objeto of aluminium window fitters and small
+  // builders, and they produced 3 of every 4 "makers" in the first pass. This
+  // row means industrial metal forming, not a construction trade.
   { sub: 'Metal fabrication / stamping', sector: 'Industrial Products',
-    re: /calder[ei]r[ií]a|estampaci[oó]n|chapa\s+met[aá]lica|carpinter[ií]a\s+met[aá]lica|construcciones?\s+met[aá]licas/i },
+    re: /calder[ei]r[ií]a|estampaci[oó]n\s+(?:met[aá]lica|de\s+metal)|troquelad|chapa\s+met[aá]lica|plegado\s+de\s+chapa|corte\s+(?:por\s+)?l[aá]ser\s+de\s+metal/i },
   { sub: 'Technical plastics / injection molding', sector: 'Industrial Products',
     re: /inyecci[oó]n\s+de\s+(?:pl[aá]sticos?|pl[aá]stico)|pl[aá]sticos?\s+t[eé]cnicos?|moldeo\s+de\s+pl[aá]stico|transformaci[oó]n\s+de\s+materias\s+pl[aá]sticas/i },
   { sub: 'Industrial packaging', sector: 'Industrial Products',
@@ -574,6 +578,122 @@ async function runSectors (from, to, provinceFilter, jsonlFile) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// mode: classify
+//
+// Re-scores the harvested JSONL offline. No network, so the regexes above can
+// be re-tuned and re-run for free instead of re-fetching 17 years.
+//
+// The first pass scored a word match anywhere in the objeto, and Spanish
+// `objeto social` is a kitchen-sink list, so a flower shop that SELLS
+// fertilizer scored the same as a fertilizer plant. Two corrections:
+//
+//   1. WHERE the match sits. The principal activity is written first. A match
+//      in the opening clause is worth more than one buried in the tail.
+//   2. MAKER or TRADER. ARPA buys companies that make things. `fabricacion`
+//      near the match means maker, `comercio al por menor` means shop.
+// ─────────────────────────────────────────────────────────────────────────────
+// `instalacion` is deliberately absent. An installer is a service business,
+// not a manufacturer, and including it made fitters look like makers.
+const MAKER = /fabricaci[oó]n|producci[oó]n|elaboraci[oó]n|mecanizad|transformaci[oó]n|manufactura|montaje\s+en\s+taller/i
+const TRADER = /comercio\s+al\s+por\s+(?:menor|mayor)|compraventa|distribuci[oó]n|importaci[oó]n|exportaci[oó]n|representaci[oó]n|intermediaci[oó]n|venta\s+al\s+(?:por\s+menor|detall)/i
+
+// The principal activity is whatever is written before the first full stop or
+// lettered marker. Measured median objeto is 260 chars, so this is usually the
+// first sentence rather than an arbitrary prefix.
+function principalSpan (objeto) {
+  const m = objeto.match(/^[\s\S]{40,}?(?:\.|\b[b-f]\)\s)/)
+  return m ? m[0].length : Math.min(objeto.length, 200)
+}
+
+function scoreRow (row) {
+  const head = principalSpan(row.objeto)
+  const out = []
+  for (const t of TAXONOMY) {
+    const m = t.re.exec(row.objeto)
+    if (!m) continue
+    // Read the clause around the match to decide maker or trader.
+    const ctx = row.objeto.slice(Math.max(0, m.index - 140), m.index + 60)
+    const maker = MAKER.test(ctx)
+    const trader = TRADER.test(ctx)
+    out.push({
+      sub: t.sub,
+      sector: t.sector,
+      principal: m.index < head,
+      role: maker && !trader ? 'maker' : trader && !maker ? 'trader' : maker ? 'mixed' : 'unclear',
+    })
+  }
+  return out
+}
+
+async function runClassify (jsonlFile, outFile) {
+  if (!jsonlFile) throw new Error('classify mode needs --jsonl <file>')
+  const raw = (await readFile(jsonlFile, 'utf8')).split('\n').filter(Boolean)
+
+  // A kill between the two appends can repeat one day, so dedupe first.
+  const seen = new Set()
+  const rows = []
+  for (const line of raw) {
+    const r = JSON.parse(line)
+    const id = `${r.key}|${r.date}|${r.objeto.slice(0, 60)}`
+    if (seen.has(id)) continue
+    seen.add(id)
+    rows.push(r)
+  }
+
+  const tiers = { maker_principal: [], maker_secondary: [], other: [] }
+  const bySub = new Map()
+
+  for (const r of rows) {
+    const hits = scoreRow(r)
+    if (!hits.length) continue
+    const best = hits.find((h) => h.principal && h.role === 'maker')
+      || hits.find((h) => h.role === 'maker')
+      || hits[0]
+    const tier = best.principal && best.role === 'maker' ? 'maker_principal'
+      : best.role === 'maker' ? 'maker_secondary'
+      : 'other'
+    const rec = {
+      name: r.name, province: r.province, hoja: r.hoja, date: r.date,
+      sector: best.sector, subsector: best.sub, role: best.role,
+      principal: best.principal, patrimonial: r.patrimonial,
+      all: hits.map((h) => h.sub),
+    }
+    tiers[tier].push(rec)
+    if (tier !== 'other') bySub.set(best.sub, (bySub.get(best.sub) || 0) + 1)
+  }
+
+  console.log('SECTOR CLASSIFICATION · re-scored offline\n')
+  console.log(`rows read                ${raw.length}`)
+  console.log(`after dedupe             ${rows.length}`)
+  console.log(`maker, principal activity ${tiers.maker_principal.length}   <- the usable list`)
+  console.log(`maker, secondary activity ${tiers.maker_secondary.length}`)
+  console.log(`trader or unclear        ${tiers.other.length}   <- dropped\n`)
+
+  const rowsBySub = [...bySub].sort((a, b) => b[1] - a[1])
+  if (rowsBySub.length) {
+    const w = Math.max(...rowsBySub.map((r) => r[0].length))
+    console.log('makers by subsector\n')
+    for (const [sub, n] of rowsBySub) console.log(`${String(n).padStart(7)}  ${sub.padEnd(w)}`)
+  }
+
+  console.log('\nsample of 15 principal-activity makers\n')
+  for (const r of tiers.maker_principal.slice(0, 15)) {
+    console.log(`${r.province.padEnd(20)} ${r.name}`)
+    console.log(`  ${r.subsector}${r.patrimonial ? '  [also patrimonial]' : ''}`)
+  }
+
+  if (outFile) {
+    await writeFile(outFile, JSON.stringify({
+      generated_at: new Date().toISOString(),
+      source: jsonlFile,
+      rows_read: raw.length,
+      companies: tiers.maker_principal.concat(tiers.maker_secondary),
+    }, null, 2))
+    console.log(`\nwrote ${tiers.maker_principal.length + tiers.maker_secondary.length} makers to ${outFile}`)
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 function args () {
   const [mode, ...rest] = process.argv.slice(2)
   const flags = {}
@@ -584,8 +704,10 @@ function args () {
     if (next === undefined || next.startsWith('--')) flags[name] = true
     else { flags[name] = next; i++ }
   }
-  if (!['labels', 'tier1', 'sectors'].includes(mode) || !flags.from || !flags.to) {
+  const needsRange = mode !== 'classify'
+  if (!['labels', 'tier1', 'sectors', 'classify'].includes(mode) || (needsRange && (!flags.from || !flags.to))) {
     console.error('usage: node scripts/borme-probe.mjs <labels|tier1|sectors> --from YYYY-MM-DD --to YYYY-MM-DD')
+    console.error('       node scripts/borme-probe.mjs classify --jsonl file.jsonl [--out file.json]')
     console.error('       [--province A,B] [--out file.json] [--jsonl file.jsonl] [--no-cache]')
     process.exit(1)
   }
@@ -599,7 +721,9 @@ function args () {
 const { mode, from, to, out, jsonl, province, noCache } = args()
 NOCACHE = noCache
 
-if (mode === 'sectors') {
+if (mode === 'classify') {
+  await runClassify(jsonl, out)
+} else if (mode === 'sectors') {
   await runSectors(from, to, province, jsonl)
 } else {
   const { entries, publishingDays } = await ingest(from, to, province)
