@@ -288,10 +288,22 @@ function parseSectionA (xml) {
 // BORME does NOT publish the CIF. The durable key is the registry sheet
 // (province + hoja), not the tax number. That is a correction to the plan:
 // joining BORME to a bought XBRL deposit needs a name or hoja match, not a CIF.
+// ⚠️ The field list before the hoja is NOT fixed, and anchoring to it silently
+// loses the key on every bulletin before about 2014:
+//   2026  Datos registrales. S 8 , H A 208326, I/A 1 (25.09.26).
+//   2009  Datos registrales. T 1112 , F 34, S 8, H VI 9623, I/A 1 (17.10.03).
+// So read the `H <letters> <digits>` pair out of the tail instead of matching
+// the whole line. Measured: the old anchor gave 0% coverage across 340,947
+// rows of 2009-2013 while giving 99.9% on 2026.
 function registryKey (text, province) {
-  const m = text.match(/Datos registrales\.\s*S\s*(\d+)\s*,\s*H\s*([A-Z]{1,3})\s*(\d+)/i)
-  if (!m) return null
-  return { seccion: m[1], hoja: `${m[2]} ${m[3]}`, key: `${province}|${m[2]}${m[3]}` }
+  const i = text.search(/Datos registrales\./i)
+  if (i < 0) return null
+  const tail = text.slice(i, i + 200)
+  const h = tail.match(/\bH\s+([A-Za-z]{1,3})\s*(\d+)/)
+  if (!h) return null
+  const s = tail.match(/\bS\s+(\d+)/)
+  const libro = h[1].toUpperCase()
+  return { seccion: s ? s[1] : null, hoja: `${libro} ${h[2]}`, key: `${province}|${libro}${h[2]}` }
 }
 
 // `Objeto social: La fabricacion y venta de productos de pasteleria. Domicilio: ...`
@@ -443,7 +455,7 @@ function runTier1 (entries, publishingDays, outFile) {
   const byProvince = new Map()
   const ranked = []
 
-  for (const row of companies.values()) {
+  for (const [key, row] of companies) {
     for (const id of row.rules) ruleCount.set(id, ruleCount.get(id) + 1)
     const score = [...row.rules].reduce((s, id) => s + RULES.find((r) => r.id === id).weight, 0)
     const p = byProvince.get(row.province) || { total: 0, multi: 0 }
@@ -451,7 +463,7 @@ function runTier1 (entries, publishingDays, outFile) {
     if (row.rules.size >= 2) p.multi++
     byProvince.set(row.province, p)
     ranked.push({
-      name: row.name, province: row.province, hoja: row.hoja,
+      key, name: row.name, province: row.province, hoja: row.hoja,
       rules: [...row.rules], distinct: row.rules.size, score,
       dates: [...new Set(row.events.map((e) => e.date))].sort(),
     })
@@ -656,7 +668,8 @@ async function runClassify (jsonlFile, outFile) {
       : best.role === 'maker' ? 'maker_secondary'
       : 'other'
     const rec = {
-      name: r.name, province: r.province, hoja: r.hoja, date: r.date,
+      key: r.key, name: r.name, province: r.province, hoja: r.hoja,
+      date: r.date, cnae: r.cnae, objeto: r.objeto,
       sector: best.sector, subsector: best.sub, role: best.role,
       principal: best.principal, patrimonial: r.patrimonial,
       all: hits.map((h) => h.sub),
