@@ -44,7 +44,8 @@
 // Cost: zero. No API key, no credits. Cached under .borme-cache/.
 
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { createReadStream, existsSync } from 'node:fs'
+import readline from 'node:readline'
 import path from 'node:path'
 
 const CACHE = path.join(process.cwd(), '.borme-cache')
@@ -612,6 +613,17 @@ async function runSectors (from, to, provinceFilter, jsonlFile) {
 const MAKER = /fabricaci[oó]n|producci[oó]n|elaboraci[oó]n|mecanizad|transformaci[oó]n|manufactura|montaje\s+en\s+taller/i
 const TRADER = /comercio\s+al\s+por\s+(?:menor|mayor)|compraventa|distribuci[oó]n|importaci[oó]n|exportaci[oó]n|representaci[oó]n|intermediaci[oó]n|venta\s+al\s+(?:por\s+menor|detall)/i
 
+// Two measured false-positive families, both of which looked like makers:
+//
+//   forestry   "desbroce manual y MECANIZADO", "servicios forestales". Here
+//              `mecanizado` is the adjective "mechanised", not machining.
+//   wood       `torneado` and `fresado` are woodworking verbs too, so joiners
+//              and furniture makers landed in Precision machined parts.
+//
+// Metal is the subject ARPA buys, so a clause whose subject is wood or forest
+// is not a hit. A metal shop that also cuts wood keeps its other clauses.
+const NOT_INDUSTRIAL = /desbroce|servicios?\s+forestal|reforestaci[oó]n|saca\s+de\s+madera|tala\s+de\s+[aá]rboles|carpinter[ií]a\s+de\s+madera|ebanister[ií]a|muebles?\s+de\s+madera/i
+
 // The principal activity is whatever is written before the first full stop or
 // lettered marker. Measured median objeto is 260 chars, so this is usually the
 // first sentence rather than an arbitrary prefix.
@@ -628,6 +640,7 @@ function scoreRow (row) {
     if (!m) continue
     // Read the clause around the match to decide maker or trader.
     const ctx = row.objeto.slice(Math.max(0, m.index - 140), m.index + 60)
+    if (NOT_INDUSTRIAL.test(ctx)) continue
     const maker = MAKER.test(ctx)
     const trader = TRADER.test(ctx)
     out.push({
@@ -642,23 +655,30 @@ function scoreRow (row) {
 
 async function runClassify (jsonlFile, outFile) {
   if (!jsonlFile) throw new Error('classify mode needs --jsonl <file>')
-  const raw = (await readFile(jsonlFile, 'utf8')).split('\n').filter(Boolean)
-
-  // A kill between the two appends can repeat one day, so dedupe first.
-  const seen = new Set()
-  const rows = []
-  for (const line of raw) {
-    const r = JSON.parse(line)
-    const id = `${r.key}|${r.date}|${r.objeto.slice(0, 60)}`
-    if (seen.has(id)) continue
-    seen.add(id)
-    rows.push(r)
-  }
 
   const tiers = { maker_principal: [], maker_secondary: [], other: [] }
   const bySub = new Map()
 
-  for (const r of rows) {
+  // A kill between the two appends can repeat one day, so dedupe as we read.
+  // Read line by line: a full 17-year pass is ~700MB, well over the 512MB cap
+  // on a single JS string, so readFile() throws ERR_STRING_TOO_LONG.
+  const seen = new Set()
+  let raw = 0
+  let rows = 0
+  const lines = readline.createInterface({
+    input: createReadStream(jsonlFile, { encoding: 'utf8' }),
+    crlfDelay: Infinity,
+  })
+
+  for await (const line of lines) {
+    if (!line) continue
+    raw++
+    const r = JSON.parse(line)
+    const id = `${r.key}|${r.date}|${r.objeto.slice(0, 60)}`
+    if (seen.has(id)) continue
+    seen.add(id)
+    rows++
+
     const hits = scoreRow(r)
     if (!hits.length) continue
     const best = hits.find((h) => h.principal && h.role === 'maker')
@@ -679,8 +699,8 @@ async function runClassify (jsonlFile, outFile) {
   }
 
   console.log('SECTOR CLASSIFICATION · re-scored offline\n')
-  console.log(`rows read                ${raw.length}`)
-  console.log(`after dedupe             ${rows.length}`)
+  console.log(`rows read                ${raw}`)
+  console.log(`after dedupe             ${rows}`)
   console.log(`maker, principal activity ${tiers.maker_principal.length}   <- the usable list`)
   console.log(`maker, secondary activity ${tiers.maker_secondary.length}`)
   console.log(`trader or unclear        ${tiers.other.length}   <- dropped\n`)
@@ -702,7 +722,7 @@ async function runClassify (jsonlFile, outFile) {
     await writeFile(outFile, JSON.stringify({
       generated_at: new Date().toISOString(),
       source: jsonlFile,
-      rows_read: raw.length,
+      rows_read: raw,
       companies: tiers.maker_principal.concat(tiers.maker_secondary),
     }, null, 2))
     console.log(`\nwrote ${tiers.maker_principal.length + tiers.maker_secondary.length} makers to ${outFile}`)
