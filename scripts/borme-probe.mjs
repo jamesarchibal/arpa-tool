@@ -613,16 +613,26 @@ async function runSectors (from, to, provinceFilter, jsonlFile) {
 const MAKER = /fabricaci[oó]n|producci[oó]n|elaboraci[oó]n|mecanizad|transformaci[oó]n|manufactura|montaje\s+en\s+taller/i
 const TRADER = /comercio\s+al\s+por\s+(?:menor|mayor)|compraventa|distribuci[oó]n|importaci[oó]n|exportaci[oó]n|representaci[oó]n|intermediaci[oó]n|venta\s+al\s+(?:por\s+menor|detall)/i
 
-// Two measured false-positive families, both of which looked like makers:
+// Four measured false-positive families, all of which looked like makers:
 //
 //   forestry   "desbroce manual y MECANIZADO", "servicios forestales". Here
 //              `mecanizado` is the adjective "mechanised", not machining.
 //   wood       `torneado` and `fresado` are woodworking verbs too, so joiners
 //              and furniture makers landed in Precision machined parts.
+//   warehouse  "proyectos de ALMACENES MECANIZADOS y/o automatizados" is a
+//              software integrator, same adjective trap (EASY SOFTWARE
+//              INSTALLATIONS SL ranked as Precision machined parts).
+//   energy     "explotación de proyectos de energías renovables ... biogás,
+//              biometano ... a partir del tratamiento de residuos". These are
+//              generation SPVs that OPERATE a plant. They matched Filtration /
+//              recycling / waste SYSTEMS, which is the row for the company that
+//              BUILDS the plant. 12 of the first 47-company shortlist were this
+//              one family: GREENING BIOMETHANE IV-XI and GAS RENOVABLE <place>.
 //
-// Metal is the subject ARPA buys, so a clause whose subject is wood or forest
-// is not a hit. A metal shop that also cuts wood keeps its other clauses.
-const NOT_INDUSTRIAL = /desbroce|servicios?\s+forestal|reforestaci[oó]n|saca\s+de\s+madera|tala\s+de\s+[aá]rboles|carpinter[ií]a\s+de\s+madera|ebanister[ií]a|muebles?\s+de\s+madera/i
+// Metal is the subject ARPA buys, so a clause whose subject is wood, forest,
+// warehouse software or a power plant is not a hit. A metal shop that also cuts
+// wood keeps its other clauses.
+const NOT_INDUSTRIAL = /desbroce|servicios?\s+forestal|reforestaci[oó]n|saca\s+de\s+madera|tala\s+de\s+[aá]rboles|carpinter[ií]a\s+de\s+madera|ebanister[ií]a|muebles?\s+de\s+madera|almacenes?\s+mecanizad|energ[ií]as?\s+renovables|biomet[aá]n|biog[aá]s|gases\s+renovables|fotovoltaic|e[oó]lic|termosolar|central(?:es)?\s+de\s+generaci[oó]n/i
 
 // The principal activity is whatever is written before the first full stop or
 // lettered marker. Measured median objeto is 260 chars, so this is usually the
