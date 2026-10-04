@@ -211,6 +211,7 @@ export interface OriginationView {
 }
 
 const ORIGINATION_PAGE = 300;
+const FACET_PAGE = 1000;
 
 /**
  * The origination shortlist, read province-first and ranked by how many distinct
@@ -235,21 +236,32 @@ export async function getOrigination(filters: OriginationFilters = {}): Promise<
   if (filters.status) q = q.eq('status', filters.status);
   if (filters.moving) q = q.gt('signal_count', 0);
 
-  const [list, facets, movingCount] = await Promise.all([
-    q,
-    supabase.from('arpa_origination').select('province, subsector'),
-    supabase.from('arpa_origination').select('id', { count: 'exact', head: true }).gt('signal_count', 0),
-  ]);
+  // PostgREST caps an unbounded select at 1,000 rows, so the single facet read
+  // only saw a fifth of the table and the province list came out different on
+  // every request. Page through it. The three columns are small, and this also
+  // gives the "con señal" count without a separate `head: true` request, which
+  // returned 0 in production because the count only travels in the
+  // `Content-Range` response header and nothing guarantees it survives a HEAD
+  // through the proxy.
+  const facetRows: { province: string; subsector: string | null; signal_count: number }[] = [];
+  for (let from = 0; ; from += FACET_PAGE) {
+    const page = await supabase
+      .from('arpa_origination')
+      .select('province, subsector, signal_count')
+      .range(from, from + FACET_PAGE - 1);
+    if (page.error) throw new Error(`arpa_origination facets: ${page.error.message}`);
+    const rows = (page.data ?? []) as typeof facetRows;
+    facetRows.push(...rows);
+    if (rows.length < FACET_PAGE) break;
+  }
 
+  const list = await q;
   if (list.error) throw new Error(`arpa_origination: ${list.error.message}`);
-  if (facets.error) throw new Error(`arpa_origination facets: ${facets.error.message}`);
-
-  const facetRows = (facets.data ?? []) as { province: string; subsector: string | null }[];
 
   return {
     rows: (list.data ?? []) as OriginationRow[],
     total: list.count ?? 0,
-    moving: movingCount.count ?? 0,
+    moving: facetRows.filter((r) => r.signal_count > 0).length,
     provinces: [...new Set(facetRows.map((r) => r.province))].sort(),
     subsectors: [...new Set(facetRows.map((r) => r.subsector).filter((s): s is string => Boolean(s)))].sort(),
   };
