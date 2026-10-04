@@ -170,6 +170,91 @@ export async function getTaxonomyOptions() {
   return (data ?? []) as { id: number; sector: string; category: string; subsector: string }[];
 }
 
+export interface OriginationRow {
+  id: number;
+  reg_key: string;
+  legal_name: string;
+  province: string;
+  hoja: string | null;
+  sector: string | null;
+  subsector: string | null;
+  objeto: string | null;
+  objeto_date: string | null;
+  cnae: string | null;
+  role: string | null;
+  principal: boolean;
+  patrimonial: boolean;
+  signals: string[];
+  signal_count: number;
+  signal_score: number;
+  first_signal_at: string | null;
+  last_signal_at: string | null;
+  status: string;
+  project_id: string | null;
+  note: string | null;
+}
+
+export interface OriginationFilters {
+  province?: string;
+  subsector?: string;
+  status?: string;
+  /** Only companies with at least one pre-sale signal. */
+  moving?: boolean;
+}
+
+export interface OriginationView {
+  rows: OriginationRow[];
+  total: number;
+  moving: number;
+  provinces: string[];
+  subsectors: string[];
+}
+
+const ORIGINATION_PAGE = 300;
+
+/**
+ * The origination shortlist, read province-first and ranked by how many distinct
+ * pre-sale signals fired. Loaded by scripts/borme-load.mjs out of BORME.
+ *
+ * The facet lists come from a separate thin select rather than from `rows`,
+ * because `rows` is capped and the filter chips must still show every option.
+ */
+export async function getOrigination(filters: OriginationFilters = {}): Promise<OriginationView> {
+  const supabase = createClient();
+
+  let q = supabase
+    .from('arpa_origination')
+    .select('*', { count: 'exact' })
+    .order('signal_count', { ascending: false })
+    .order('signal_score', { ascending: false })
+    .order('legal_name')
+    .limit(ORIGINATION_PAGE);
+
+  if (filters.province) q = q.eq('province', filters.province);
+  if (filters.subsector) q = q.eq('subsector', filters.subsector);
+  if (filters.status) q = q.eq('status', filters.status);
+  if (filters.moving) q = q.gt('signal_count', 0);
+
+  const [list, facets, movingCount] = await Promise.all([
+    q,
+    supabase.from('arpa_origination').select('province, subsector'),
+    supabase.from('arpa_origination').select('id', { count: 'exact', head: true }).gt('signal_count', 0),
+  ]);
+
+  if (list.error) throw new Error(`arpa_origination: ${list.error.message}`);
+  if (facets.error) throw new Error(`arpa_origination facets: ${facets.error.message}`);
+
+  const facetRows = (facets.data ?? []) as { province: string; subsector: string | null }[];
+
+  return {
+    rows: (list.data ?? []) as OriginationRow[],
+    total: list.count ?? 0,
+    moving: movingCount.count ?? 0,
+    provinces: [...new Set(facetRows.map((r) => r.province))].sort(),
+    subsectors: [...new Set(facetRows.map((r) => r.subsector).filter((s): s is string => Boolean(s)))].sort(),
+  };
+}
+
 export async function getProjectDetail(id: string): Promise<ProjectDetail | null> {
   const supabase = createClient();
 

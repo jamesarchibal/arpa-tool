@@ -247,3 +247,93 @@ export async function createLead(input: unknown): Promise<ActionResult & { proje
   revalidatePath('/');
   return { ok: true, message: 'Lead creado', projectId: project.id };
 }
+
+const originationStatusSchema = z.object({
+  reg_key: z.string().min(3).max(200),
+  status: z.enum(['new', 'shortlisted', 'discarded']),
+});
+
+/** Marc's triage on the BORME shortlist. `promoted` is set by promoteOrigination. */
+export async function setOriginationStatus(input: unknown): Promise<ActionResult> {
+  const parsed = originationStatusSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: 'Datos no válidos' };
+
+  const supabase = createClient();
+  const { error } = await supabase
+    .from('arpa_origination')
+    .update({ status: parsed.data.status, updated_at: new Date().toISOString() })
+    .eq('reg_key', parsed.data.reg_key);
+
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath('/origination');
+  return { ok: true, message: 'Guardado' };
+}
+
+/**
+ * Turn a BORME row into a real project.
+ *
+ * BORME has no CIF, so the company is created without one and Marc fills it in
+ * later. The origination row keeps the project id, so promoting twice is a
+ * no-op rather than a duplicate.
+ */
+export async function promoteOrigination(input: unknown): Promise<ActionResult & { projectId?: string }> {
+  const parsed = z.object({ reg_key: z.string().min(3).max(200) }).safeParse(input);
+  if (!parsed.success) return { ok: false, message: 'Datos no válidos' };
+
+  const supabase = createClient();
+  const { data: row, error: rErr } = await supabase
+    .from('arpa_origination')
+    .select('reg_key, legal_name, province, subsector, cnae, objeto, project_id')
+    .eq('reg_key', parsed.data.reg_key)
+    .maybeSingle();
+
+  if (rErr) return { ok: false, message: rErr.message };
+  if (!row) return { ok: false, message: 'Esa empresa no está en la lista' };
+  if (row.project_id) return { ok: true, message: 'Ya estaba en el pipeline', projectId: row.project_id };
+
+  let taxonomyId: number | null = null;
+  if (row.subsector) {
+    const { data: tax } = await supabase
+      .from('arpa_taxonomy')
+      .select('id')
+      .eq('subsector', row.subsector)
+      .maybeSingle();
+    taxonomyId = tax?.id ?? null;
+  }
+
+  const { data: company, error: cErr } = await supabase
+    .from('arpa_companies')
+    .insert({
+      legal_name: row.legal_name,
+      country: 'ES',
+      region: row.province,
+      taxonomy_id: taxonomyId,
+      taxonomy_fit: taxonomyId ? 'in' : 'adjacent',
+      cnae: row.cnae,
+      notes: row.objeto,
+    })
+    .select('id')
+    .single();
+
+  if (cErr) return { ok: false, message: cErr.message };
+
+  const { data: project, error: pErr } = await supabase
+    .from('arpa_projects')
+    .insert({ company_id: company.id, stage: 'Sourcing', source: `BORME ${row.reg_key}` })
+    .select('id')
+    .single();
+
+  if (pErr) return { ok: false, message: pErr.message };
+
+  const { error: uErr } = await supabase
+    .from('arpa_origination')
+    .update({ status: 'promoted', project_id: project.id, updated_at: new Date().toISOString() })
+    .eq('reg_key', row.reg_key);
+
+  if (uErr) return { ok: false, message: uErr.message };
+
+  revalidatePath('/origination');
+  revalidatePath('/');
+  return { ok: true, message: 'Pasada al pipeline', projectId: project.id };
+}

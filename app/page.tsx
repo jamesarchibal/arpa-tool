@@ -104,7 +104,22 @@ export default async function ArpaPage({ searchParams }: { searchParams: { stage
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">🧮 ARPA · Pipeline</h1>
+          {/* Absolute, and a plain anchor: /arpa sits outside this app's basePath, so
+              next/link would resolve it to /arpa/app/arpa. */}
+          <div className="flex flex-wrap items-center gap-3 text-xs">
+            <a
+              href="https://www.joblanders.ai/arpa"
+              className="text-zinc-500 transition hover:text-zinc-300"
+            >
+              ← joblanders.ai/arpa
+            </a>
+            <span className="text-zinc-700">|</span>
+            <span className="text-zinc-300">Pipeline</span>
+            <Link href="/origination" className="text-zinc-500 transition hover:text-zinc-300">
+              Originación →
+            </Link>
+          </div>
+          <h1 className="mt-2 text-2xl font-bold text-white">🧮 ARPA · Pipeline</h1>
           <p className="mt-1 max-w-3xl text-sm text-zinc-500">
             Screening sobre el blueprint de ARPA Partners: 16 criterios, tres puertas (QSS, OM, PFR) y
             los 13 kill criteria. Escala 0-100. Puntúa Marc; cada puntuación queda firmada y con fecha.
