@@ -21,8 +21,8 @@ const OWNERSHIP = [
   'Unknown',
 ] as const;
 
-const field = 'w-full rounded border border-border bg-bg px-2.5 py-1.5 text-sm text-white outline-none focus:border-brand';
-const label = 'mb-1 block text-[11px] uppercase tracking-wider text-zinc-500';
+const field = 'w-full rounded border border-border bg-bg px-2.5 py-1.5 text-sm text-ink outline-none focus:border-brand';
+const label = 'mb-1 block text-[11px] uppercase tracking-wider text-ink-mute';
 
 export default function NewLeadForm({ taxonomy }: { taxonomy: TaxonomyOption[] }) {
   const [open, setOpen] = useState(false);
@@ -73,7 +73,7 @@ export default function NewLeadForm({ taxonomy }: { taxonomy: TaxonomyOption[] }
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded bg-brand px-3.5 py-2 text-sm font-medium text-white transition hover:opacity-90"
+        className="rounded bg-brand px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-brand-hover"
       >
         + Nueva empresa
       </button>
@@ -83,8 +83,8 @@ export default function NewLeadForm({ taxonomy }: { taxonomy: TaxonomyOption[] }
   return (
     <div className="w-full max-w-xl rounded-lg border border-border bg-bg-card p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-white">Nueva empresa y proyecto</h2>
-        <button type="button" onClick={() => setOpen(false)} className="text-xs text-zinc-500 hover:text-zinc-300">
+        <h2 className="text-sm font-semibold text-ink">Nueva empresa y proyecto</h2>
+        <button type="button" onClick={() => setOpen(false)} className="text-xs text-ink-mute hover:text-ink">
           Cancelar
         </button>
       </div>
@@ -157,17 +157,17 @@ export default function NewLeadForm({ taxonomy }: { taxonomy: TaxonomyOption[] }
           </div>
         </div>
 
-        <p className="text-[11px] leading-relaxed text-zinc-600">
+        <p className="text-[11px] leading-relaxed text-ink-faint">
           &ldquo;Administrador desde&rdquo; es el año del primer nombramiento. Es el sustituto gratuito de la edad
           del propietario y la señal de sucesión más útil que hay. Sale del BORME.
         </p>
 
-        {error ? <p className="text-xs text-rose-400">{error}</p> : null}
+        {error ? <p className="text-xs text-rose-600">{error}</p> : null}
 
         <button
           type="submit"
           disabled={pending}
-          className="w-full rounded bg-brand px-3 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-50"
+          className="w-full rounded bg-brand px-3 py-2 text-sm font-semibold text-white transition hover:bg-brand-hover disabled:opacity-50"
         >
           {pending ? 'Creando…' : 'Crear y abrir'}
         </button>

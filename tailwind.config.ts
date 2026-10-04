@@ -1,7 +1,6 @@
 import type { Config } from 'tailwindcss';
 
 const config: Config = {
-  darkMode: 'class',
   content: [
     './app/**/*.{ts,tsx}',
     './components/**/*.{ts,tsx}',
@@ -9,34 +8,36 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      // The JobLanders palette, the same one the decks and joblanders.ai use:
+      // warm paper, near-black ink, and exactly one accent colour.
       colors: {
-        // Joblanders dark palette
         bg: {
-          DEFAULT: '#0b0d12',
-          elevated: '#12151c',
-          card: '#161a23',
+          DEFAULT: '#FBFAF7', // paper
+          elevated: '#F2F0EA', // table heads, chips
+          card: '#FFFFFF',
         },
         border: {
-          DEFAULT: '#232834',
-          strong: '#2f3545',
+          DEFAULT: '#E4E1D8',
+          strong: '#CFCBBF',
+        },
+        ink: {
+          DEFAULT: '#111114',
+          soft: '#4A4A52',
+          mute: '#6E6E78',
+          faint: '#9A9AA3',
         },
         brand: {
-          DEFAULT: '#6366f1',
-          hover: '#7c7ff5',
+          DEFAULT: '#FF009B',
+          hover: '#D60083',
+          wash: '#FFE8F5',
         },
-        success: '#22c55e',
-        danger: '#ef4444',
-        warning: '#f59e0b',
-        muted: '#8a92a6',
+        success: '#047857',
+        danger: '#BE123C',
+        warning: '#B45309',
       },
       fontFamily: {
-        sans: [
-          'Inter',
-          '-apple-system',
-          'BlinkMacSystemFont',
-          'Segoe UI',
-          'sans-serif',
-        ],
+        sans: ['var(--font-archivo)', 'Archivo', 'Helvetica Neue', 'sans-serif'],
+        mono: ['var(--font-mono)', 'JetBrains Mono', 'ui-monospace', 'monospace'],
       },
     },
   },

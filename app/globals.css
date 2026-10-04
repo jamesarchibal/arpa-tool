@@ -4,12 +4,19 @@
 
 @layer base {
   html {
-    color-scheme: dark;
+    color-scheme: light;
   }
 
   body {
-    @apply bg-bg text-gray-100 antialiased;
-    font-feature-settings: 'cv11', 'ss01';
+    /* The default family lives here, not as a `font-sans` utility on <html>:
+       Tailwind emits font-sans after font-mono, so a utility on <html> would
+       beat every `font-mono` on a child. */
+    @apply bg-bg font-sans text-ink antialiased;
+  }
+
+  /* Labels, codes and figures are mono, as on joblanders.ai and in the decks. */
+  .label {
+    @apply font-mono text-[11px] uppercase tracking-[0.12em] text-ink-mute;
   }
 
   *:focus-visible {

@@ -47,8 +47,8 @@ export default function RowActions({
           onClick={() => run(() => setOriginationStatus({ reg_key: regKey, status: status === 'shortlisted' ? 'new' : 'shortlisted' }))}
           className={`${btn} ${
             status === 'shortlisted'
-              ? 'border-amber-700 bg-amber-950/40 text-amber-300'
-              : 'border-border text-zinc-500 hover:text-zinc-300'
+              ? 'border-amber-200 bg-amber-50 text-amber-700'
+              : 'border-border text-ink-mute hover:text-ink'
           }`}
         >
           {status === 'shortlisted' ? 'en lista' : 'lista'}
@@ -59,8 +59,8 @@ export default function RowActions({
           onClick={() => run(() => setOriginationStatus({ reg_key: regKey, status: status === 'discarded' ? 'new' : 'discarded' }))}
           className={`${btn} ${
             status === 'discarded'
-              ? 'border-rose-800 bg-rose-950/40 text-rose-300'
-              : 'border-border text-zinc-500 hover:text-zinc-300'
+              ? 'border-rose-200 bg-rose-50 text-rose-700'
+              : 'border-border text-ink-mute hover:text-ink'
           }`}
         >
           {status === 'discarded' ? 'descartada' : 'descartar'}
@@ -69,13 +69,13 @@ export default function RowActions({
           type="button"
           disabled={pending}
           onClick={() => run(() => promoteOrigination({ reg_key: regKey }))}
-          className={`${btn} border-emerald-700 bg-emerald-950/50 text-emerald-300`}
+          className={`${btn} border-emerald-200 bg-emerald-50 text-emerald-700`}
           title="Crea la empresa y su proyecto en el pipeline"
         >
           al pipeline
         </button>
       </div>
-      {error ? <span className="text-[10px] text-rose-400">{error}</span> : null}
+      {error ? <span className="text-[10px] text-rose-600">{error}</span> : null}
     </div>
   );
 }

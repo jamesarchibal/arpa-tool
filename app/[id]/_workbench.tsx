@@ -18,8 +18,8 @@ import type { ProjectRecord } from '@/lib/arpa/db';
 import { saveProject, saveScores } from '../actions';
 
 const field =
-  'w-full rounded border border-border bg-bg px-2 py-1.5 text-sm tabular-nums text-white outline-none focus:border-brand';
-const label = 'mb-1 block text-[11px] uppercase tracking-wider text-zinc-500';
+  'w-full rounded border border-border bg-bg px-2 py-1.5 text-sm tabular-nums text-ink outline-none focus:border-brand';
+const label = 'mb-1 block text-[11px] uppercase tracking-wider text-ink-mute';
 const card = 'rounded-lg border border-border bg-bg-card p-4';
 
 const STAGES = [
@@ -168,8 +168,8 @@ export default function Workbench({ project, baseInput, scoredByDefault, flagged
         <div
           className={`rounded-lg border px-4 py-2.5 text-sm ${
             msg.ok
-              ? 'border-emerald-800 bg-emerald-950/40 text-emerald-300'
-              : 'border-rose-800 bg-rose-950/40 text-rose-300'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+              : 'border-rose-200 bg-rose-50 text-rose-700'
           }`}
         >
           {msg.text}
@@ -181,21 +181,21 @@ export default function Workbench({ project, baseInput, scoredByDefault, flagged
         {result.models.map((m) => {
           const tone =
             m.outcome === 0
-              ? 'border-emerald-700 text-emerald-300'
+              ? 'border-emerald-200 text-emerald-700'
               : m.outcome === 1
-                ? 'border-amber-700 text-amber-300'
+                ? 'border-amber-200 text-amber-700'
                 : m.outcome === 2
-                  ? 'border-rose-800 text-rose-300'
-                  : 'border-border text-zinc-500';
+                  ? 'border-rose-200 text-rose-700'
+                  : 'border-border text-ink-mute';
           return (
             <div key={m.id} className={`${card} space-y-2`}>
               <div className="flex items-baseline justify-between">
-                <span className="text-[11px] uppercase tracking-wider text-zinc-500">{m.name}</span>
+                <span className="text-[11px] uppercase tracking-wider text-ink-mute">{m.name}</span>
                 <span className={`rounded border px-2 py-0.5 text-[11px] font-semibold ${tone}`}>{m.verdict}</span>
               </div>
-              <div className="text-3xl font-bold tabular-nums text-white">
+              <div className="text-3xl font-bold tabular-nums text-ink">
                 {m.score0to100 ?? '—'}
-                <span className="ml-1 text-sm font-normal text-zinc-600">/ 100</span>
+                <span className="ml-1 text-sm font-normal text-ink-faint">/ 100</span>
               </div>
               <div className="h-1.5 overflow-hidden rounded bg-bg">
                 <div
@@ -206,11 +206,11 @@ export default function Workbench({ project, baseInput, scoredByDefault, flagged
                 />
               </div>
               {m.vetoed ? (
-                <p className="text-[11px] font-semibold text-rose-400">
+                <p className="text-[11px] font-semibold text-rose-600">
                   VETO · {m.vetoes.length} kill criteri{m.vetoes.length === 1 ? 'on' : 'a'}
                 </p>
               ) : null}
-              <p className="text-[11px] leading-snug text-zinc-600">
+              <p className="text-[11px] leading-snug text-ink-faint">
                 Cobertura {Math.round(m.coverage * 100)} % del peso. {m.question}
               </p>
             </div>
@@ -218,15 +218,15 @@ export default function Workbench({ project, baseInput, scoredByDefault, flagged
         })}
 
         <div className={`${card} space-y-2`}>
-          <span className="text-[11px] uppercase tracking-wider text-zinc-500">Overall Project Score</span>
-          <div className="text-3xl font-bold tabular-nums text-white">
+          <span className="text-[11px] uppercase tracking-wider text-ink-mute">Overall Project Score</span>
+          <div className="text-3xl font-bold tabular-nums text-ink">
             {result.overall0to100 ?? '—'}
-            <span className="ml-1 text-sm font-normal text-zinc-600">/ 100</span>
+            <span className="ml-1 text-sm font-normal text-ink-faint">/ 100</span>
           </div>
-          <p className="text-[11px] text-zinc-400">
+          <p className="text-[11px] text-ink-soft">
             {result.stage} · {result.decision}
           </p>
-          <p className="text-[11px] leading-snug text-zinc-600">
+          <p className="text-[11px] leading-snug text-ink-faint">
             Media simple de las puertas puntuadas. El blueprint no da los pesos entre modelos.
           </p>
         </div>
@@ -234,7 +234,7 @@ export default function Workbench({ project, baseInput, scoredByDefault, flagged
 
       {/* ── derived metrics ───────────────────────────────────────────────── */}
       <div className={card}>
-        <h3 className="mb-3 text-sm font-semibold text-white">Métricas derivadas</h3>
+        <h3 className="mb-3 text-sm font-semibold text-ink">Métricas derivadas</h3>
         <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
           {([
             ['EBITDA de referencia', mn(d.ebitdaRef)],
@@ -249,8 +249,8 @@ export default function Workbench({ project, baseInput, scoredByDefault, flagged
             ['Múltiplo pedido', xx(d.askMultiple)],
           ] as [string, string][]).map(([k, v]) => (
             <div key={k}>
-              <div className="text-[11px] text-zinc-500">{k}</div>
-              <div className={`text-sm font-semibold tabular-nums ${v === '—' ? 'text-zinc-600' : 'text-white'}`}>{v}</div>
+              <div className="text-[11px] text-ink-mute">{k}</div>
+              <div className={`text-sm font-semibold tabular-nums ${v === '—' ? 'text-ink-faint' : 'text-ink'}`}>{v}</div>
             </div>
           ))}
         </div>
@@ -259,8 +259,8 @@ export default function Workbench({ project, baseInput, scoredByDefault, flagged
       {/* ── data entry ────────────────────────────────────────────────────── */}
       <div className={card}>
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-white">Datos del proyecto</h3>
-          <span className="text-[11px] text-zinc-600">Todo en millones de euros</span>
+          <h3 className="text-sm font-semibold text-ink">Datos del proyecto</h3>
+          <span className="text-[11px] text-ink-faint">Todo en millones de euros</span>
         </div>
 
         <div className="space-y-4">
@@ -373,11 +373,11 @@ export default function Workbench({ project, baseInput, scoredByDefault, flagged
               type="button"
               onClick={onSaveData}
               disabled={savingData || !dirtyData}
-              className="rounded bg-brand px-3.5 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40"
+              className="rounded bg-brand px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-brand-hover disabled:opacity-40"
             >
               {savingData ? 'Guardando…' : 'Guardar datos'}
             </button>
-            {dirtyData ? <span className="text-[11px] text-amber-400">Hay cambios sin guardar</span> : null}
+            {dirtyData ? <span className="text-[11px] text-amber-600">Hay cambios sin guardar</span> : null}
           </div>
         </div>
       </div>
@@ -389,13 +389,13 @@ export default function Workbench({ project, baseInput, scoredByDefault, flagged
           return (
             <div key={m.id} className={card}>
               <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-                <h3 className="text-sm font-semibold text-white">{m.name}</h3>
-                <span className="text-[11px] text-zinc-600">Etapa: {m.stage}</span>
+                <h3 className="text-sm font-semibold text-ink">{m.name}</h3>
+                <span className="text-[11px] text-ink-faint">Etapa: {m.stage}</span>
               </div>
 
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[620px] text-sm">
-                  <thead className="text-left text-[10px] uppercase tracking-wider text-zinc-600">
+                  <thead className="text-left text-[10px] uppercase tracking-wider text-ink-faint">
                     <tr>
                       <th className="pb-2 font-medium">Criterio</th>
                       <th className="w-20 pb-2 text-right font-medium">Peso %</th>
@@ -407,8 +407,8 @@ export default function Workbench({ project, baseInput, scoredByDefault, flagged
                     {m.criteria.map((c) => (
                       <tr key={c.key} className="border-t border-border/60">
                         <td className="py-2 pr-3">
-                          <div className="text-[13px] text-zinc-200">{c.name}</div>
-                          <div className="text-[11px] leading-snug text-zinc-600">{c.detail}</div>
+                          <div className="text-[13px] text-ink">{c.name}</div>
+                          <div className="text-[11px] leading-snug text-ink-faint">{c.detail}</div>
                         </td>
                         <td className="py-2">
                           <input
@@ -423,15 +423,15 @@ export default function Workbench({ project, baseInput, scoredByDefault, flagged
                         </td>
                         <td className="py-2 text-center">
                           {c.autoScore !== null ? (
-                            <span className="rounded border border-border px-1.5 py-0.5 text-[11px] text-zinc-400">
+                            <span className="rounded border border-border px-1.5 py-0.5 text-[11px] text-ink-soft">
                               {c.autoScore}
                             </span>
                           ) : c.usedDefault ? (
-                            <span className="text-[10px] uppercase text-amber-500" title="Nadie lo ha valorado; se usa 3 como provisional">
+                            <span className="text-[10px] uppercase text-amber-600" title="Nadie lo ha valorado; se usa 3 como provisional">
                               provisional
                             </span>
                           ) : (
-                            <span className="text-[10px] uppercase text-zinc-700">sin dato</span>
+                            <span className="text-[10px] uppercase text-ink-faint">sin dato</span>
                           )}
                         </td>
                         <td className="py-2">
@@ -454,7 +454,7 @@ export default function Workbench({ project, baseInput, scoredByDefault, flagged
                 </table>
               </div>
 
-              <div className={`mt-2 flex justify-between border-t border-border pt-2 text-[11px] ${weightOff ? 'text-rose-400' : 'text-zinc-600'}`}>
+              <div className={`mt-2 flex justify-between border-t border-border pt-2 text-[11px] ${weightOff ? 'text-rose-600' : 'text-ink-faint'}`}>
                 <span>Suma de pesos</span>
                 <strong className="tabular-nums">{m.weightSum.toFixed(0)} %</strong>
               </div>
@@ -465,8 +465,8 @@ export default function Workbench({ project, baseInput, scoredByDefault, flagged
 
       {/* ── kill criteria ─────────────────────────────────────────────────── */}
       <div className={card}>
-        <h3 className="text-sm font-semibold text-white">Kill criteria</h3>
-        <p className="mb-3 mt-1 text-[11px] leading-relaxed text-zinc-500">
+        <h3 className="text-sm font-semibold text-ink">Kill criteria</h3>
+        <p className="mb-3 mt-1 text-[11px] leading-relaxed text-ink-mute">
           Literales de la hoja Funnel_Stages. Marcar una casilla veta esa etapa por encima de la
           puntuación. &ldquo;Sugerido&rdquo; quiere decir que los datos ya apuntan a ese criterio, pero sigue
           haciendo falta marcarlo a mano.
@@ -479,7 +479,7 @@ export default function Workbench({ project, baseInput, scoredByDefault, flagged
           }, {}),
         ).map(([stageName, items]) => (
           <div key={stageName} className="mt-3">
-            <div className="mb-1 text-[10px] uppercase tracking-wider text-zinc-600">{stageName}</div>
+            <div className="mb-1 text-[10px] uppercase tracking-wider text-ink-faint">{stageName}</div>
             {items.map((k) => {
               const on = flagged.includes(k.id);
               return (
@@ -493,11 +493,11 @@ export default function Workbench({ project, baseInput, scoredByDefault, flagged
                     }
                     className="mt-0.5 h-4 w-4 accent-rose-500"
                   />
-                  <label htmlFor={k.id} className="flex-1 cursor-pointer text-[13px] leading-snug text-zinc-300">
+                  <label htmlFor={k.id} className="flex-1 cursor-pointer text-[13px] leading-snug text-ink">
                     {k.text}
                   </label>
                   {suggestedIds.has(k.id) && !on ? (
-                    <span className="whitespace-nowrap rounded border border-amber-700 px-1.5 py-0.5 text-[10px] uppercase text-amber-400">
+                    <span className="whitespace-nowrap rounded border border-amber-200 px-1.5 py-0.5 text-[10px] uppercase text-amber-600">
                       sugerido
                     </span>
                   ) : null}
@@ -507,7 +507,7 @@ export default function Workbench({ project, baseInput, scoredByDefault, flagged
           </div>
         ))}
 
-        <label className="mt-4 flex items-center gap-2 text-[12px] text-zinc-400">
+        <label className="mt-4 flex items-center gap-2 text-[12px] text-ink-soft">
           <input
             type="checkbox"
             checked={blockOnSuggested}
@@ -521,28 +521,28 @@ export default function Workbench({ project, baseInput, scoredByDefault, flagged
       {/* ── flags ─────────────────────────────────────────────────────────── */}
       {(result.weakPoints.length > 0 || result.gaps.length > 0 || result.passReasonMissing) ? (
         <div className={card}>
-          <h3 className="mb-2 text-sm font-semibold text-white">Avisos</h3>
+          <h3 className="mb-2 text-sm font-semibold text-ink">Avisos</h3>
           <ul className="space-y-1.5 text-[12px]">
             {result.passReasonMissing ? (
-              <li className="text-amber-400">
+              <li className="text-amber-600">
                 Este deal cae por un motivo que la lista Pass / Lost Reason no sabe expresar
                 {result.passReasonSource ? ` (${result.passReasonSource})` : ''}. Falta un valor en su
                 lista de siete.
               </li>
             ) : null}
             {result.passReason ? (
-              <li className="text-zinc-300">
+              <li className="text-ink">
                 Pass / Lost Reason propuesto: <strong>{result.passReason}</strong>
-                {result.passReasonSource ? <span className="text-zinc-600"> · {result.passReasonSource}</span> : null}
+                {result.passReasonSource ? <span className="text-ink-faint"> · {result.passReasonSource}</span> : null}
               </li>
             ) : null}
             {result.weakPoints.slice(0, 4).map((w) => (
-              <li key={`${w.model}-${w.name}`} className="text-zinc-400">
+              <li key={`${w.model}-${w.name}`} className="text-ink-soft">
                 Punto débil: {w.model} · {w.name} = {w.score} (peso {w.weight} %)
               </li>
             ))}
             {result.gaps.length > 0 ? (
-              <li className="text-amber-400">
+              <li className="text-amber-600">
                 Faltan datos para {result.gaps.length} criterio(s): {result.gaps.slice(0, 4).join('; ')}
                 {result.gaps.length > 4 ? '…' : ''}
               </li>
@@ -553,8 +553,8 @@ export default function Workbench({ project, baseInput, scoredByDefault, flagged
 
       {/* ── save ──────────────────────────────────────────────────────────── */}
       <div className={card}>
-        <h3 className="text-sm font-semibold text-white">Firmar la puntuación</h3>
-        <p className="mb-3 mt-1 text-[11px] leading-relaxed text-zinc-500">
+        <h3 className="text-sm font-semibold text-ink">Firmar la puntuación</h3>
+        <p className="mb-3 mt-1 text-[11px] leading-relaxed text-ink-mute">
           Se guarda una fila por puerta, con quién y cuándo. No se sobreescribe nada: la puntuación
           anterior queda en el historial. El servidor recalcula desde los datos guardados, así que
           conviene guardar los datos antes de firmar.
@@ -604,13 +604,13 @@ export default function Workbench({ project, baseInput, scoredByDefault, flagged
         </div>
 
         {proceedAt <= monitorAt ? (
-          <p className="mt-2 text-[11px] text-rose-400">
+          <p className="mt-2 text-[11px] text-rose-600">
             El umbral de Proceder tiene que estar por encima del de Monitorizar.
           </p>
         ) : null}
 
         {dirtyData ? (
-          <p className="mt-2 text-[11px] text-amber-400">
+          <p className="mt-2 text-[11px] text-amber-600">
             Hay datos sin guardar. El servidor puntuará con los datos guardados, no con los de pantalla.
           </p>
         ) : null}
@@ -619,7 +619,7 @@ export default function Workbench({ project, baseInput, scoredByDefault, flagged
           type="button"
           onClick={onSaveScore}
           disabled={savingScore || !scoredBy.trim() || proceedAt <= monitorAt}
-          className="mt-3 rounded bg-brand px-3.5 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-40"
+          className="mt-3 rounded bg-brand px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-brand-hover disabled:opacity-40"
         >
           {savingScore ? 'Guardando…' : 'Guardar puntuación'}
         </button>

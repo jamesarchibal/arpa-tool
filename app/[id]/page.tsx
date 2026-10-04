@@ -29,8 +29,8 @@ const MODEL_NAME: Record<string, string> = {
 function Panel({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
     <section className="rounded-lg border border-border bg-bg-card p-4">
-      <h2 className="text-sm font-semibold text-white">{title}</h2>
-      {hint ? <p className="mt-0.5 text-[11px] text-zinc-500">{hint}</p> : null}
+      <h2 className="text-sm font-semibold text-ink">{title}</h2>
+      {hint ? <p className="mt-0.5 text-[11px] text-ink-mute">{hint}</p> : null}
       <div className="mt-3">{children}</div>
     </section>
   );
@@ -54,27 +54,27 @@ export default async function ArpaProjectPage({ params }: { params: { id: string
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/" className="text-xs text-zinc-500 transition hover:text-zinc-300">
+        <Link href="/" className="text-xs text-ink-mute transition hover:text-ink">
           ← Pipeline
         </Link>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-white">{company.legal_name}</h1>
-            <p className="mt-1 text-xs text-zinc-500">{header.join(' · ') || 'Sin datos de ficha'}</p>
+            <h1 className="text-2xl font-bold text-ink">{company.legal_name}</h1>
+            <p className="mt-1 text-xs text-ink-mute">{header.join(' · ') || 'Sin datos de ficha'}</p>
             {taxonomy ? (
-              <p className="mt-1 text-xs text-zinc-400">
+              <p className="mt-1 text-xs text-ink-soft">
                 {taxonomy.sector} · {taxonomy.category} · {taxonomy.subsector}
-                <span className="ml-2 text-zinc-600">
+                <span className="ml-2 text-ink-faint">
                   crecimiento {taxonomy.growth} · fragmentación {taxonomy.fragmentation} · consolidación{' '}
                   {taxonomy.consolidation}
                 </span>
               </p>
             ) : (
-              <p className="mt-1 text-xs text-amber-500">Sin subsector asignado: el encaje sectorial no se puede puntuar.</p>
+              <p className="mt-1 text-xs text-amber-600">Sin subsector asignado: el encaje sectorial no se puede puntuar.</p>
             )}
           </div>
-          <div className="text-right text-xs text-zinc-500">
-            {project.code ? <div className="font-mono text-zinc-400">{project.code}</div> : null}
+          <div className="text-right text-xs text-ink-mute">
+            {project.code ? <div className="font-mono text-ink-soft">{project.code}</div> : null}
             <div>Actualizado {dt(project.updated_at)}</div>
             {company.website ? (
               <a
@@ -103,11 +103,11 @@ export default async function ArpaProjectPage({ params }: { params: { id: string
           hint="Cada guardado añade una fila por puerta. No se sobrescribe nada."
         >
           {scores.length === 0 ? (
-            <p className="text-xs text-zinc-600">Todavía sin puntuar.</p>
+            <p className="text-xs text-ink-faint">Todavía sin puntuar.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
-                <thead className="text-left text-[11px] uppercase tracking-wider text-zinc-500">
+                <thead className="text-left text-[11px] uppercase tracking-wider text-ink-mute">
                   <tr>
                     <th className="pb-2 font-medium">Puerta</th>
                     <th className="pb-2 text-right font-medium">0-100</th>
@@ -119,18 +119,18 @@ export default async function ArpaProjectPage({ params }: { params: { id: string
                 <tbody>
                   {scores.map((s) => (
                     <tr key={s.id} className="border-t border-border">
-                      <td className="py-1.5 text-zinc-400">{MODEL_NAME[s.model] ?? s.model}</td>
-                      <td className="py-1.5 text-right font-semibold tabular-nums text-white">
+                      <td className="py-1.5 text-ink-soft">{MODEL_NAME[s.model] ?? s.model}</td>
+                      <td className="py-1.5 text-right font-semibold tabular-nums text-ink">
                         {s.total_0_100 ?? '—'}
                       </td>
                       <td className="py-1.5">
-                        <span className={s.vetoed ? 'font-semibold text-rose-400' : 'text-zinc-400'}>
+                        <span className={s.vetoed ? 'font-semibold text-rose-600' : 'text-ink-soft'}>
                           {s.verdict}
                           {s.vetoed ? ' (veto)' : ''}
                         </span>
                       </td>
-                      <td className="py-1.5 text-zinc-400">{s.scored_by}</td>
-                      <td className="py-1.5 text-zinc-600">{dt(s.scored_at)}</td>
+                      <td className="py-1.5 text-ink-soft">{s.scored_by}</td>
+                      <td className="py-1.5 text-ink-faint">{dt(s.scored_at)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -141,23 +141,23 @@ export default async function ArpaProjectPage({ params }: { params: { id: string
 
         <Panel title="Personas" hint="Contactos de la empresa y de este proyecto.">
           {stakeholders.length === 0 ? (
-            <p className="text-xs text-zinc-600">Sin contactos registrados.</p>
+            <p className="text-xs text-ink-faint">Sin contactos registrados.</p>
           ) : (
             <ul className="space-y-2">
               {stakeholders.map((s) => (
                 <li key={s.link_id} className="rounded border border-border bg-bg px-3 py-2">
                   <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-sm text-white">
+                    <span className="text-sm text-ink">
                       {s.full_name}
                       {s.is_primary ? <span className="ml-2 text-[10px] font-bold text-brand">PRINCIPAL</span> : null}
                     </span>
-                    <span className="text-[11px] text-zinc-600">{s.kind}</span>
+                    <span className="text-[11px] text-ink-faint">{s.kind}</span>
                   </div>
-                  <div className="text-[11px] text-zinc-500">
+                  <div className="text-[11px] text-ink-mute">
                     {[s.role, s.org].filter(Boolean).join(' · ') || '—'}
                   </div>
                   {s.email || s.phone ? (
-                    <div className="mt-0.5 text-[11px] text-zinc-400">
+                    <div className="mt-0.5 text-[11px] text-ink-soft">
                       {[s.email, s.phone].filter(Boolean).join(' · ')}
                     </div>
                   ) : null}
@@ -170,25 +170,25 @@ export default async function ArpaProjectPage({ params }: { params: { id: string
 
       <Panel title="Interacciones" hint="Últimas 30, de más reciente a más antigua.">
         {interactions.length === 0 ? (
-          <p className="text-xs text-zinc-600">Sin interacciones registradas.</p>
+          <p className="text-xs text-ink-faint">Sin interacciones registradas.</p>
         ) : (
           <ul className="space-y-2">
             {interactions.map((r) => (
               <li key={r.id} className="rounded border border-border bg-bg px-3 py-2">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span className="text-xs text-zinc-400">
-                    <span className="text-white">{r.kind}</span>
+                  <span className="text-xs text-ink-soft">
+                    <span className="text-ink">{r.kind}</span>
                     {r.direction ? ` · ${r.direction}` : ''}
                     {r.stakeholder_name ? ` · ${r.stakeholder_name}` : ''}
                   </span>
-                  <span className="text-[11px] text-zinc-600">
+                  <span className="text-[11px] text-ink-faint">
                     {dt(r.happened_at)}
                     {r.logged_by ? ` · ${r.logged_by}` : ''}
                   </span>
                 </div>
-                {r.summary ? <p className="mt-1 text-xs leading-relaxed text-zinc-300">{r.summary}</p> : null}
+                {r.summary ? <p className="mt-1 text-xs leading-relaxed text-ink">{r.summary}</p> : null}
                 {r.next_step ? (
-                  <p className="mt-1 text-[11px] text-amber-400">
+                  <p className="mt-1 text-[11px] text-amber-600">
                     Siguiente paso: {r.next_step}
                     {r.next_step_due ? ` (${d(r.next_step_due)})` : ''}
                   </p>
@@ -201,7 +201,7 @@ export default async function ArpaProjectPage({ params }: { params: { id: string
 
       {company.notes ? (
         <Panel title="Notas">
-          <p className="whitespace-pre-wrap text-xs leading-relaxed text-zinc-300">{company.notes}</p>
+          <p className="whitespace-pre-wrap text-xs leading-relaxed text-ink">{company.notes}</p>
         </Panel>
       ) : null}
     </div>

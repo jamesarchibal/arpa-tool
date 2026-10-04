@@ -1,9 +1,19 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import { Archivo, JetBrains_Mono } from 'next/font/google';
 
 import './globals.css';
 
-const inter = Inter({ subsets: ['latin'], display: 'swap' });
+const archivo = Archivo({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-archivo',
+});
+
+const mono = JetBrains_Mono({
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-mono',
+});
 
 export const metadata: Metadata = {
   title: 'ARPA Partners · Screening',
@@ -13,7 +23,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es" className={`dark ${inter.className}`}>
+    <html lang="es" className={`${archivo.variable} ${mono.variable}`}>
       <body>
         <div className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 lg:px-8">{children}</div>
       </body>
