@@ -343,10 +343,13 @@ async function sectionADocs (iso) {
   }
   const json = JSON.parse(raw)
   if (json?.status?.code !== '200') return []
-  const diarios = json?.data?.sumario?.diario || []
+  // The API collapses a single-element list into a bare object, at every level.
+  // Days with one diario, or one seccion, arrive as objects instead of arrays.
+  // This is common in the thin 2012-2013 bulletins and it crashed the backfill.
+  const diarios = [].concat(json?.data?.sumario?.diario || [])
   const out = []
   for (const diario of diarios) {
-    for (const sec of diario.seccion || []) {
+    for (const sec of [].concat(diario.seccion || [])) {
       if (sec.codigo !== 'A') continue
       for (const item of [].concat(sec.item || [])) {
         out.push({ iso, ymd, id: item.identificador, titulo: item.titulo, url: item.url_xml })
