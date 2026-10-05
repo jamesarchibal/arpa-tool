@@ -80,52 +80,52 @@ const RULES = [
   // holding-insertion fingerprint that is actually observable: once the owner
   // puts a holdco above the opco, the holdco becomes the administrator.
   // It is also GDPR-safe, because the appointee is a company, not a person.
-  { id: 'holding_admin', weight: 5, label: 'Corporate administrator appointed (holdco above the opco)',
+  { id: 'holding_admin', phase: 'prep', weight: 5, label: 'Corporate administrator appointed (holdco above the opco)',
     raw: true,
     re: /(?:Nombramientos|Reelecciones)\.\s*(?:Adm\.\s*(?:Unico|Solid\.|Mancom\.)|ADM\.UNICO|ADM\.SOLIDAR\.)\s*:\s*[^;.]*?\b(?:S\.?L\.?U?\.?|S\.?A\.?U?\.?|SOCIEDAD\s+(?:LIMITADA|ANONIMA|DE\s+RESPONSABILIDAD)|HOLDING)\b/i },
 
   // Opco survives and a branch (usually the property) is carved out.
-  { id: 'escision_parcial', weight: 5, label: 'Escision parcial / segregacion (carve-out, opco survives)',
+  { id: 'escision_parcial', phase: 'prep', weight: 5, label: 'Escision parcial / segregacion (carve-out, opco survives)',
     re: /escisi[oó]n\s+parcial|segregaci[oó]n/i, survivesExclude: true },
 
   // Opco is split into beneficiary companies and dies. The BENEFICIARIES are
   // the new targets, and their names are printed in the same paragraph.
-  { id: 'escision_total', weight: 4, label: 'Escision total (opco split, beneficiaries are the new targets)',
+  { id: 'escision_total', phase: 'done', weight: 4, label: 'Escision total (opco split, beneficiaries are the new targets)',
     re: /escisi[oó]n\s+total/i, survivesExclude: true },
 
   // Buying a clean audit before anyone asks for one.
-  { id: 'auditor', weight: 4, label: 'Auditor appointed or changed',
+  { id: 'auditor', phase: 'prep', weight: 4, label: 'Auditor appointed or changed',
     re: /\bauditor\b|AUDIT\.CUENT|\bAud\.\s*:/i },
 
-  { id: 'transformacion', weight: 4, label: 'Transformacion de sociedad (SL to SA and back)',
+  { id: 'transformacion', phase: 'prep', weight: 4, label: 'Transformacion de sociedad (SL to SA and back)',
     re: /transformaci[oó]n\s+de\s+sociedad/i },
 
   // Cash out. BORME rarely prints the cause, so this is capital reduction of
   // any kind and it needs a second signal to mean anything.
-  { id: 'reduccion_capital', weight: 3, label: 'Reduccion de capital',
+  { id: 'reduccion_capital', phase: 'prep', weight: 3, label: 'Reduccion de capital',
     re: /reducci[oó]n\s+de\s+capital/i },
 
   // Administrador unico becomes a board. Professionalising governance.
-  { id: 'consejo', weight: 3, label: 'Consejero appointed or ceased (board governance)',
+  { id: 'consejo', phase: 'prep', weight: 3, label: 'Consejero appointed or ceased (board governance)',
     re: /\bconsejer/i },
 
   // A minority entered, so somebody already sold part of it.
-  { id: 'unipersonalidad_perdida', weight: 3, label: 'Perdida del caracter de unipersonalidad (minority came in)',
+  { id: 'unipersonalidad_perdida', phase: 'done', weight: 3, label: 'Perdida del caracter de unipersonalidad (minority came in)',
     re: /p[eé]rdida\s+del\s+car[aá]cter\s+de\s+unipersonalidad/i },
 
-  { id: 'socio_unico_cambio', weight: 3, label: 'Cambio de identidad del socio unico (owner changed)',
+  { id: 'socio_unico_cambio', phase: 'done', weight: 3, label: 'Cambio de identidad del socio unico (owner changed)',
     re: /cambio\s+de\s+identidad\s+del\s+socio/i },
 
   // The absorbing company is a consolidator. This is the feed for the
   // consolidation map, which is the highest-ROI play in the plan.
-  { id: 'fusion_absorcion', weight: 3, label: 'Fusion por absorcion (absorber is a consolidator)',
+  { id: 'fusion_absorcion', phase: 'done', weight: 3, label: 'Fusion por absorcion (absorber is a consolidator)',
     re: /fusi[oó]n\s+por\s+absorci[oó]n/i, survivesExclude: true },
 
   // Very common (about 300 a day), so on its own it is noise. Kept at weight 1
   // purely as a co-occurrence tiebreak. We never record WHO, because that
   // would be a natural person and would need the legitimate interest
   // assessment the plan flags.
-  { id: 'apoderado', weight: 1, label: 'Apoderado appointed (noisy, tiebreak only)',
+  { id: 'apoderado', phase: 'prep', weight: 1, label: 'Apoderado appointed (noisy, tiebreak only)',
     re: /(?:Nombramientos|Reelecciones)\.\s*(?:Apoderado|Apo\.|APODERAD)/i },
 ]
 
@@ -458,19 +458,47 @@ function runTier1 (entries, publishingDays, outFile) {
 
   for (const [key, row] of companies) {
     for (const id of row.rules) ruleCount.set(id, ruleCount.get(id) + 1)
-    const score = [...row.rules].reduce((s, id) => s + RULES.find((r) => r.id === id).weight, 0)
+    const ids = [...row.rules]
+    const ph = (id) => RULES.find((r) => r.id === id).phase
+    const w = (id) => RULES.find((r) => r.id === id).weight
+
+    // Two scores that must NEVER be added together. `prep` means the owner is
+    // getting the company ready, so there is still runway. `done` means a
+    // transaction already happened, so the company is not a lead at all: it is
+    // a pointer to whoever bought it, which is what feeds the consolidation map.
+    const prepRules = ids.filter((id) => ph(id) === 'prep')
+    const doneRules = ids.filter((id) => ph(id) === 'done')
+    const score = prepRules.reduce((s, id) => s + w(id), 0)
+    const doneScore = doneRules.reduce((s, id) => s + w(id), 0)
+
+    // Earliest day a preparation act appeared. The best moment to call is soon
+    // after the FIRST one, before an advisor is mandated, so the recency of this
+    // date matters more than the length of an already completed sequence.
+    const prepDates = row.events
+      .filter((e) => e.rules.some((id) => ph(id) === 'prep'))
+      .map((e) => e.date).sort()
+
     const p = byProvince.get(row.province) || { total: 0, multi: 0 }
     p.total++
     if (row.rules.size >= 2) p.multi++
     byProvince.set(row.province, p)
     ranked.push({
       key, name: row.name, province: row.province, hoja: row.hoja,
-      rules: [...row.rules], distinct: row.rules.size, score,
+      rules: ids, distinct: row.rules.size,
+      score, doneScore, prepRules, doneRules,
+      // Ignore `apoderado`: ~300 a day, so on its own it is noise.
+      prepDistinct: prepRules.filter((id) => id !== 'apoderado').length,
+      transacted: doneRules.length > 0,
+      firstPrepDate: prepDates[0] || null,
       dates: [...new Set(row.events.map((e) => e.date))].sort(),
     })
   }
-  ranked.sort((a, b) => b.score - a.score || b.distinct - a.distinct)
+  ranked.sort((a, b) => b.score - a.score || b.prepDistinct - a.prepDistinct)
 
+  // Leads are preparing and NOT already transacted.
+  const leads = ranked.filter((r) => r.prepDistinct >= 2 && !r.transacted)
+  const early = ranked.filter((r) => r.prepDistinct === 1 && !r.transacted)
+  const buyers = ranked.filter((r) => r.transacted)
   const multi2 = ranked.filter((r) => r.distinct >= 2)
   const multi3 = ranked.filter((r) => r.distinct >= 3)
 
@@ -479,8 +507,11 @@ function runTier1 (entries, publishingDays, outFile) {
   console.log(`inscribed acts read      ${entries.length}`)
   console.log(`dropped as wrong-way     ${excluded}  (constitucion / disolucion / extincion / concurso)`)
   console.log(`companies with >=1 rule  ${ranked.length}`)
-  console.log(`companies with >=2 rules ${multi2.length}   <- "a process already running"`)
-  console.log(`companies with >=3 rules ${multi3.length}   <- highest conviction\n`)
+  console.log(`companies with >=2 rules ${multi2.length}`)
+  console.log(`companies with >=3 rules ${multi3.length}\n`)
+  console.log(`LEADS   preparing, 2+ acts, not sold  ${leads.length}`)
+  console.log(`EARLY   preparing, 1 act, not sold    ${early.length}   <- least contested`)
+  console.log(`SOLD    already transacted            ${buyers.length}   <- buyer feed, not leads\n`)
 
   console.log('by rule (companies, not events)\n')
   const rw = Math.max(...RULES.map((r) => r.label.length))
@@ -496,10 +527,16 @@ function runTier1 (entries, publishingDays, outFile) {
     console.log(`${name.padEnd(pw)}  ${String(p.total).padStart(4)}  ${String(p.multi).padStart(5)}`)
   }
 
-  console.log('\ntop 25 named candidates\n')
-  for (const r of multi2.slice(0, 25)) {
-    console.log(`${String(r.score).padStart(3)}  ${r.distinct}x  ${r.province.padEnd(18)} ${r.name}`)
-    console.log(`          ${r.rules.join(', ')}`)
+  console.log('\nLEADS · preparing to sell, no transaction yet\n')
+  for (const r of leads.slice(0, 20)) {
+    console.log(`${String(r.score).padStart(3)}  ${r.prepDistinct}x  ${r.province.padEnd(18)} ${r.name}`)
+    console.log(`          ${r.prepRules.join(', ')}   first ${r.firstPrepDate}`)
+  }
+
+  console.log('\nSOLD · already transacted, use to find the BUYER\n')
+  for (const r of buyers.slice(0, 10)) {
+    console.log(`${String(r.doneScore).padStart(3)}      ${r.province.padEnd(18)} ${r.name}`)
+    console.log(`          ${r.doneRules.join(', ')}`)
   }
 
   if (outFile) {

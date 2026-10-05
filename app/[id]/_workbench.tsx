@@ -7,6 +7,7 @@ import {
   DEFAULT_PROCEED_AT,
   KILLS,
   MODELS,
+  STAGES,
   criterionKey,
   scoreProject,
   type Concentration,
@@ -21,15 +22,6 @@ const field =
   'w-full rounded border border-border bg-bg px-2 py-1.5 text-sm tabular-nums text-ink outline-none focus:border-brand';
 const label = 'mb-1 block text-[11px] uppercase tracking-wider text-ink-mute';
 const card = 'rounded-lg border border-border bg-bg-card p-4';
-
-const STAGES = [
-  'Sourcing',
-  'Screening',
-  'Assessment',
-  'Preliminary Financial Review',
-  'Investment Case',
-  'Closed',
-] as const;
 
 /** Numeric fields of arpa_projects, kept as strings so an empty box stays empty. */
 const MONEY_FIELDS = [
@@ -176,86 +168,6 @@ export default function Workbench({ project, baseInput, scoredByDefault, flagged
         </div>
       ) : null}
 
-      {/* ── verdicts, always visible ───────────────────────────────────────── */}
-      <div className="grid gap-3 lg:grid-cols-4">
-        {result.models.map((m) => {
-          const tone =
-            m.outcome === 0
-              ? 'border-emerald-200 text-emerald-700'
-              : m.outcome === 1
-                ? 'border-amber-200 text-amber-700'
-                : m.outcome === 2
-                  ? 'border-rose-200 text-rose-700'
-                  : 'border-border text-ink-mute';
-          return (
-            <div key={m.id} className={`${card} space-y-2`}>
-              <div className="flex items-baseline justify-between">
-                <span className="text-[11px] uppercase tracking-wider text-ink-mute">{m.name}</span>
-                <span className={`rounded border px-2 py-0.5 text-[11px] font-semibold ${tone}`}>{m.verdict}</span>
-              </div>
-              <div className="text-3xl font-bold tabular-nums text-ink">
-                {m.score0to100 ?? '—'}
-                <span className="ml-1 text-sm font-normal text-ink-faint">/ 100</span>
-              </div>
-              <div className="h-1.5 overflow-hidden rounded bg-bg">
-                <div
-                  className={
-                    m.outcome === 0 ? 'h-full bg-emerald-500' : m.outcome === 1 ? 'h-full bg-amber-500' : 'h-full bg-rose-500'
-                  }
-                  style={{ width: `${m.score0to100 ?? 0}%` }}
-                />
-              </div>
-              {m.vetoed ? (
-                <p className="text-[11px] font-semibold text-rose-600">
-                  VETO · {m.vetoes.length} kill criteri{m.vetoes.length === 1 ? 'on' : 'a'}
-                </p>
-              ) : null}
-              <p className="text-[11px] leading-snug text-ink-faint">
-                Cobertura {Math.round(m.coverage * 100)} % del peso. {m.question}
-              </p>
-            </div>
-          );
-        })}
-
-        <div className={`${card} space-y-2`}>
-          <span className="text-[11px] uppercase tracking-wider text-ink-mute">Overall Project Score</span>
-          <div className="text-3xl font-bold tabular-nums text-ink">
-            {result.overall0to100 ?? '—'}
-            <span className="ml-1 text-sm font-normal text-ink-faint">/ 100</span>
-          </div>
-          <p className="text-[11px] text-ink-soft">
-            {result.stage} · {result.decision}
-          </p>
-          <p className="text-[11px] leading-snug text-ink-faint">
-            Media simple de las puertas puntuadas. El blueprint no da los pesos entre modelos.
-          </p>
-        </div>
-      </div>
-
-      {/* ── derived metrics ───────────────────────────────────────────────── */}
-      <div className={card}>
-        <h3 className="mb-3 text-sm font-semibold text-ink">Métricas derivadas</h3>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
-          {([
-            ['EBITDA de referencia', mn(d.ebitdaRef)],
-            ['Margen EBITDA', pct(d.ebitdaMargin)],
-            ['CAGR ingresos (2a)', pct(d.revenueCagr)],
-            ['Brecha normalización', pct(d.normalisationGap)],
-            ['Conversión de caja', pct(d.cashConversion, 0)],
-            ['Deuda neta / EBITDA', xx(d.leverage)],
-            ['Enterprise Value', mn(d.enterpriseValue)],
-            ['Equity Value', mn(d.equityValue)],
-            ['Valuation Gap', mn(d.valuationGapM)],
-            ['Múltiplo pedido', xx(d.askMultiple)],
-          ] as [string, string][]).map(([k, v]) => (
-            <div key={k}>
-              <div className="text-[11px] text-ink-mute">{k}</div>
-              <div className={`text-sm font-semibold tabular-nums ${v === '—' ? 'text-ink-faint' : 'text-ink'}`}>{v}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* ── data entry ────────────────────────────────────────────────────── */}
       <div className={card}>
         <div className="mb-3 flex items-center justify-between">
@@ -379,6 +291,87 @@ export default function Workbench({ project, baseInput, scoredByDefault, flagged
             </button>
             {dirtyData ? <span className="text-[11px] text-amber-600">Hay cambios sin guardar</span> : null}
           </div>
+        </div>
+      </div>
+
+      {/* ── derived metrics ───────────────────────────────────────────────── */}
+      <div className={card}>
+        <h3 className="mb-3 text-sm font-semibold text-ink">Métricas derivadas</h3>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
+          {([
+            ['EBITDA de referencia', mn(d.ebitdaRef)],
+            ['Margen EBITDA', pct(d.ebitdaMargin)],
+            ['CAGR ingresos (2a)', pct(d.revenueCagr)],
+            ['Brecha normalización', pct(d.normalisationGap)],
+            ['Conversión de caja', pct(d.cashConversion, 0)],
+            ['Deuda neta / EBITDA', xx(d.leverage)],
+            ['Enterprise Value', mn(d.enterpriseValue)],
+            ['Equity Value', mn(d.equityValue)],
+            ['Valuation Gap', mn(d.valuationGapM)],
+            ['Múltiplo pedido', xx(d.askMultiple)],
+          ] as [string, string][]).map(([k, v]) => (
+            <div key={k}>
+              <div className="text-[11px] text-ink-mute">{k}</div>
+              <div className={`text-sm font-semibold tabular-nums ${v === '—' ? 'text-ink-faint' : 'text-ink'}`}>{v}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── verdicts · below the facts on purpose. The score is a summary of
+          what is entered above, so it is not the front door of the page. */}
+      <div className="grid gap-3 lg:grid-cols-4">
+        {result.models.map((m) => {
+          const tone =
+            m.outcome === 0
+              ? 'border-emerald-200 text-emerald-700'
+              : m.outcome === 1
+                ? 'border-amber-200 text-amber-700'
+                : m.outcome === 2
+                  ? 'border-rose-200 text-rose-700'
+                  : 'border-border text-ink-mute';
+          return (
+            <div key={m.id} className={`${card} space-y-2`}>
+              <div className="flex items-baseline justify-between">
+                <span className="text-[11px] uppercase tracking-wider text-ink-mute">{m.name}</span>
+                <span className={`rounded border px-2 py-0.5 text-[11px] font-semibold ${tone}`}>{m.verdict}</span>
+              </div>
+              <div className="text-3xl font-bold tabular-nums text-ink">
+                {m.score0to100 ?? '—'}
+                <span className="ml-1 text-sm font-normal text-ink-faint">/ 100</span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded bg-bg">
+                <div
+                  className={
+                    m.outcome === 0 ? 'h-full bg-emerald-500' : m.outcome === 1 ? 'h-full bg-amber-500' : 'h-full bg-rose-500'
+                  }
+                  style={{ width: `${m.score0to100 ?? 0}%` }}
+                />
+              </div>
+              {m.vetoed ? (
+                <p className="text-[11px] font-semibold text-rose-600">
+                  VETO · {m.vetoes.length} kill criteri{m.vetoes.length === 1 ? 'on' : 'a'}
+                </p>
+              ) : null}
+              <p className="text-[11px] leading-snug text-ink-faint">
+                Cobertura {Math.round(m.coverage * 100)} % del peso. {m.question}
+              </p>
+            </div>
+          );
+        })}
+
+        <div className={`${card} space-y-2`}>
+          <span className="text-[11px] uppercase tracking-wider text-ink-mute">Overall Project Score</span>
+          <div className="text-3xl font-bold tabular-nums text-ink">
+            {result.overall0to100 ?? '—'}
+            <span className="ml-1 text-sm font-normal text-ink-faint">/ 100</span>
+          </div>
+          <p className="text-[11px] text-ink-soft">
+            {result.stage} · {result.decision}
+          </p>
+          <p className="text-[11px] leading-snug text-ink-faint">
+            Media simple de las puertas puntuadas. El blueprint no da los pesos entre modelos.
+          </p>
         </div>
       </div>
 

@@ -54,7 +54,7 @@ export default async function ArpaProjectPage({ params }: { params: { id: string
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/" className="text-xs text-ink-mute transition hover:text-ink">
+        <Link href="/pipeline" className="text-xs text-ink-mute transition hover:text-ink">
           ← Pipeline
         </Link>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-4">

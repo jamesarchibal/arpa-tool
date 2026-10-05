@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/server';
 import {
   KILLS,
   MODELS,
+  STAGES,
   criterionKey,
   scoreProject,
   toScoreRows,
@@ -32,14 +33,7 @@ const money = z
 
 const projectSchema = z.object({
   id: uuid,
-  stage: z.enum([
-    'Sourcing',
-    'Screening',
-    'Assessment',
-    'Preliminary Financial Review',
-    'Investment Case',
-    'Closed',
-  ]),
+  stage: z.enum(STAGES),
   owner: z.string().max(120).nullable().optional(),
   source: z.string().max(240).nullable().optional(),
   revenue_y1: money,
@@ -79,7 +73,7 @@ export async function saveProject(input: unknown): Promise<ActionResult> {
   if (error) return { ok: false, message: error.message };
 
   revalidatePath(`/${id}`);
-  revalidatePath('/');
+  revalidatePath('/pipeline');
   return { ok: true, message: 'Datos guardados' };
 }
 
@@ -188,7 +182,7 @@ export async function saveScores(input: unknown): Promise<ActionResult & { overa
   if (uErr) return { ok: false, message: uErr.message };
 
   revalidatePath(`/${projectId}`);
-  revalidatePath('/');
+  revalidatePath('/pipeline');
 
   return {
     ok: true,
@@ -244,7 +238,7 @@ export async function createLead(input: unknown): Promise<ActionResult & { proje
 
   if (pErr) return { ok: false, message: pErr.message };
 
-  revalidatePath('/');
+  revalidatePath('/pipeline');
   return { ok: true, message: 'Lead creado', projectId: project.id };
 }
 
@@ -266,7 +260,7 @@ export async function setOriginationStatus(input: unknown): Promise<ActionResult
 
   if (error) return { ok: false, message: error.message };
 
-  revalidatePath('/origination');
+  revalidatePath('/');
   return { ok: true, message: 'Guardado' };
 }
 
@@ -333,7 +327,130 @@ export async function promoteOrigination(input: unknown): Promise<ActionResult &
 
   if (uErr) return { ok: false, message: uErr.message };
 
-  revalidatePath('/origination');
   revalidatePath('/');
+  revalidatePath('/pipeline');
   return { ok: true, message: 'Pasada al pipeline', projectId: project.id };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stakeholder CRM. The blueprint's Contacts + Sources, as one person table and
+// a link table, so a banker who appears on four deals is one record.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Must match the `kind` check constraint on arpa_stakeholders. */
+export const STAKEHOLDER_KINDS = [
+  'Owner',
+  'Family member',
+  'Management',
+  'Advisor',
+  'Banker',
+  'Broker',
+  'Lawyer',
+  'Accountant',
+  'Lender',
+  'Investor',
+  'LP',
+  'Co-investor',
+  'Intermediary',
+  'Other',
+] as const;
+
+const text = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .nullable()
+    .optional()
+    .transform((v) => (v ? v : null));
+
+const stakeholderSchema = z.object({
+  full_name: z.string().trim().min(2).max(200),
+  kind: z.enum(STAKEHOLDER_KINDS),
+  org: text(200),
+  email: z.union([z.string().trim().email().max(200), z.literal('')]).nullable().optional()
+    .transform((v) => (v ? v : null)),
+  phone: text(60),
+  linkedin: text(300),
+  city: text(120),
+  notes: text(4000),
+});
+
+export async function createStakeholder(input: unknown): Promise<ActionResult & { id?: string }> {
+  const parsed = stakeholderSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: 'Datos no válidos' };
+
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('arpa_stakeholders')
+    .insert(parsed.data)
+    .select('id')
+    .single();
+
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath('/crm');
+  return { ok: true, message: 'Contacto creado', id: data.id };
+}
+
+export async function updateStakeholder(input: unknown): Promise<ActionResult> {
+  const parsed = stakeholderSchema.partial().extend({ id: uuid }).safeParse(input);
+  if (!parsed.success) return { ok: false, message: 'Datos no válidos' };
+
+  const { id, ...patch } = parsed.data;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from('arpa_stakeholders')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', id);
+
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath('/crm');
+  return { ok: true, message: 'Guardado' };
+}
+
+/**
+ * Attach a stakeholder to a company, a project, or both. `role` is the role in
+ * THIS deal, which is why it lives on the link and not on the person: the same
+ * lawyer can be sell-side on one deal and buy-side on the next.
+ */
+const linkSchema = z
+  .object({
+    stakeholder_id: uuid,
+    company_id: uuid.nullable().optional(),
+    project_id: uuid.nullable().optional(),
+    role: text(120),
+  })
+  .refine((v) => v.company_id || v.project_id, { message: 'target required' });
+
+export async function linkStakeholder(input: unknown): Promise<ActionResult> {
+  const parsed = linkSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: 'Hace falta una empresa o un proyecto' };
+
+  const supabase = createClient();
+  const { error } = await supabase.from('arpa_stakeholder_links').insert({
+    stakeholder_id: parsed.data.stakeholder_id,
+    company_id: parsed.data.company_id ?? null,
+    project_id: parsed.data.project_id ?? null,
+    role: parsed.data.role,
+  });
+
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath('/crm');
+  return { ok: true, message: 'Vinculado' };
+}
+
+export async function unlinkStakeholder(input: unknown): Promise<ActionResult> {
+  const parsed = z.object({ id: uuid }).safeParse(input);
+  if (!parsed.success) return { ok: false, message: 'Datos no válidos' };
+
+  const supabase = createClient();
+  const { error } = await supabase.from('arpa_stakeholder_links').delete().eq('id', parsed.data.id);
+
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath('/crm');
+  return { ok: true, message: 'Desvinculado' };
 }

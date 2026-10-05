@@ -108,7 +108,14 @@ for (const [key, m] of rows) {
     signals: s?.rules || [],
     signal_count: s?.distinct || 0,
     signal_score: s?.score || 0,
-    first_signal_at: dates[0] || null,
+    // Never summed. `prep` means still preparing, `done` means already sold.
+    // The probe already excludes apoderado from prepDistinct.
+    prep_count: s?.prepDistinct || 0,
+    done_count: s?.doneRules?.length || 0,
+    // For a prep-only company this is the first preparation act, which is what
+    // the feed ranks on. firstPrepDate when the probe gives it, else the first
+    // date of any signal.
+    first_signal_at: toDate(s?.firstPrepDate) || dates[0] || null,
     last_signal_at: dates[dates.length - 1] || null,
     updated_at: new Date().toISOString(),
   })

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
-import { promoteOrigination, setOriginationStatus } from '../actions';
+import { promoteOrigination, setOriginationStatus } from './actions';
 
 const btn = 'rounded border px-2 py-0.5 text-[11px] transition disabled:opacity-40';
 
