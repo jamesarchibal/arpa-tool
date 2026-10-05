@@ -53,6 +53,10 @@ export interface CompanyRecord {
   ownership_type: OwnershipType | null;
   admin_since: number | null;
   notes: string | null;
+  /** Provenance of the ficha data. See 20261005_arpa_company_enrichment.sql. */
+  enrich_source: string | null;
+  enriched_at: string | null;
+  enriched_by: string | null;
 }
 
 export interface ProjectRecord {
@@ -127,14 +131,28 @@ export interface InteractionRecord {
   stakeholder_name: string | null;
 }
 
+export interface DocumentRecord {
+  id: string;
+  title: string;
+  doc_type: string;
+  external_url: string | null;
+  storage_path: string | null;
+  period: string | null;
+  uploaded_by: string | null;
+  created_at: string;
+}
+
 export interface ProjectDetail {
   project: ProjectRecord;
   company: CompanyRecord;
   taxonomy: TaxonomyRow | null;
+  /** Every subsector, so the ficha can assign one. Keyed on the database id. */
+  taxonomyList: { id: number; subsector: string }[];
   scores: ScoreRecord[];
   killFlags: KillFlagRecord[];
   stakeholders: StakeholderRecord[];
   interactions: InteractionRecord[];
+  documents: DocumentRecord[];
   scoringInput: ScoringInput;
 }
 
@@ -300,7 +318,7 @@ export async function getProjectDetail(id: string): Promise<ProjectDetail | null
   if (cErr) throw new Error(`arpa_companies: ${cErr.message}`);
   if (!company) return null;
 
-  const [taxRows, scores, flags, links, interactions] = await Promise.all([
+  const [taxRows, scores, flags, links, interactions, documents] = await Promise.all([
     supabase.from('arpa_taxonomy').select('id, subsector'),
     supabase
       .from('arpa_scores')
@@ -318,9 +336,20 @@ export async function getProjectDetail(id: string): Promise<ProjectDetail | null
       .eq('project_id', id)
       .order('happened_at', { ascending: false })
       .limit(30),
+    // Documents of the project OR of its company: an annual accounts deposit
+    // belongs to the company and stays relevant if the deal is reopened.
+    supabase
+      .from('arpa_documents')
+      .select('id, title, doc_type, external_url, storage_path, period, uploaded_by, created_at')
+      .or(`project_id.eq.${id},company_id.eq.${project.company_id}`)
+      .order('created_at', { ascending: false })
+      .limit(60),
   ]);
 
-  const taxonomy = taxonomyById(company.taxonomy_id, (taxRows.data ?? []) as { id: number; subsector: string }[]);
+  const taxonomyList = ((taxRows.data ?? []) as { id: number; subsector: string }[]).sort((a, b) =>
+    a.subsector.localeCompare(b.subsector, 'es'),
+  );
+  const taxonomy = taxonomyById(company.taxonomy_id, taxonomyList);
 
   type LinkJoin = {
     id: string;
@@ -337,6 +366,7 @@ export async function getProjectDetail(id: string): Promise<ProjectDetail | null
     project: project as ProjectRecord,
     company: company as CompanyRecord,
     taxonomy,
+    taxonomyList,
     scores: (scores.data ?? []) as ScoreRecord[],
     killFlags: (flags.data ?? []) as KillFlagRecord[],
     stakeholders: ((links.data ?? []) as unknown as LinkJoin[])
@@ -363,6 +393,7 @@ export async function getProjectDetail(id: string): Promise<ProjectDetail | null
       logged_by: r.logged_by,
       stakeholder_name: r.arpa_stakeholders?.full_name ?? null,
     })),
+    documents: (documents.data ?? []) as DocumentRecord[],
     scoringInput: toScoringInput(project as ProjectRecord, company as CompanyRecord, taxonomy),
   };
 }

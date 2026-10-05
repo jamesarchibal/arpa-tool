@@ -5,6 +5,12 @@ import { z } from 'zod';
 
 import { createClient } from '@/lib/supabase/server';
 import {
+  DOC_TYPES,
+  ENRICH_SOURCES,
+  OWNERSHIP_TYPES,
+  STAKEHOLDER_KINDS,
+} from '@/lib/arpa/lists';
+import {
   KILLS,
   MODELS,
   STAGES,
@@ -337,24 +343,6 @@ export async function promoteOrigination(input: unknown): Promise<ActionResult &
 // a link table, so a banker who appears on four deals is one record.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Must match the `kind` check constraint on arpa_stakeholders. */
-export const STAKEHOLDER_KINDS = [
-  'Owner',
-  'Family member',
-  'Management',
-  'Advisor',
-  'Banker',
-  'Broker',
-  'Lawyer',
-  'Accountant',
-  'Lender',
-  'Investor',
-  'LP',
-  'Co-investor',
-  'Intermediary',
-  'Other',
-] as const;
-
 const text = (max: number) =>
   z
     .string()
@@ -439,11 +427,15 @@ export async function linkStakeholder(input: unknown): Promise<ActionResult> {
   if (error) return { ok: false, message: error.message };
 
   revalidatePath('/crm');
+  // Linking usually happens from a project page, so that page has to refresh too.
+  if (parsed.data.project_id) revalidatePath(`/${parsed.data.project_id}`);
   return { ok: true, message: 'Vinculado' };
 }
 
 export async function unlinkStakeholder(input: unknown): Promise<ActionResult> {
-  const parsed = z.object({ id: uuid }).safeParse(input);
+  const parsed = z
+    .object({ id: uuid, project_id: uuid.nullable().optional() })
+    .safeParse(input);
   if (!parsed.success) return { ok: false, message: 'Datos no válidos' };
 
   const supabase = createClient();
@@ -452,5 +444,164 @@ export async function unlinkStakeholder(input: unknown): Promise<ActionResult> {
   if (error) return { ok: false, message: error.message };
 
   revalidatePath('/crm');
+  if (parsed.data.project_id) revalidatePath(`/${parsed.data.project_id}`);
   return { ok: true, message: 'Desvinculado' };
+}
+
+/**
+ * Create a person and attach them to this project in one go.
+ *
+ * The CRM tab is the right place to manage people who recur across deals. This
+ * exists because the common case on a live deal is "I just spoke to the CFO",
+ * and making that a two screen job is how contacts end up never recorded.
+ */
+export async function addProjectStakeholder(input: unknown): Promise<ActionResult> {
+  const parsed = stakeholderSchema
+    .extend({ project_id: uuid, role: text(120) })
+    .safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos no válidos' };
+  }
+
+  const { project_id, role, ...person } = parsed.data;
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from('arpa_stakeholders')
+    .insert(person)
+    .select('id')
+    .single();
+
+  if (error) return { ok: false, message: error.message };
+
+  const { error: lErr } = await supabase
+    .from('arpa_stakeholder_links')
+    .insert({ stakeholder_id: data.id, project_id, role });
+
+  // The person exists but is orphaned. Say so instead of a generic failure,
+  // otherwise the next attempt creates a duplicate.
+  if (lErr) {
+    return {
+      ok: false,
+      message: `Persona creada pero sin vincular: ${lErr.message}. Vincúlala desde Contactos.`,
+    };
+  }
+
+  revalidatePath(`/${project_id}`);
+  revalidatePath('/crm');
+  return { ok: true, message: 'Persona añadida' };
+}
+
+const int = (min: number, max: number) =>
+  z
+    .union([z.number(), z.string()])
+    .nullable()
+    .optional()
+    .transform((v) => {
+      if (v === null || v === undefined || v === '') return null;
+      const n = typeof v === 'number' ? v : parseInt(v, 10);
+      return Number.isInteger(n) && n >= min && n <= max ? n : null;
+    });
+
+const enrichSchema = z.object({
+  company_id: uuid,
+  /** Only used to revalidate the page the form was submitted from. */
+  project_id: uuid.nullable().optional(),
+  trade_name: text(200),
+  cif: z
+    .string()
+    .trim()
+    .max(20)
+    .nullable()
+    .optional()
+    .transform((v) => (v ? v.toUpperCase() : null)),
+  website: text(300),
+  city: text(120),
+  region: text(120),
+  cnae: text(10),
+  employees: int(0, 5_000_000),
+  founded_year: int(1800, 2100),
+  admin_since: int(1800, 2100),
+  taxonomy_id: int(1, 100_000),
+  ownership_type: z.enum(OWNERSHIP_TYPES).nullable().optional(),
+  enrich_source: z.enum(ENRICH_SOURCES),
+  enriched_by: text(120),
+});
+
+/**
+ * The single entry point for filling a company ficha.
+ *
+ * Today a human reads SABI and types the numbers, because there is no API seat.
+ * That is deliberate, not a stopgap shape: when an API arrives, the integration
+ * calls THIS function with the same payload, so the validation, the provenance
+ * stamp and the revalidation stay in one place. Nothing about where the data
+ * lands has to be rewritten.
+ *
+ * Financials are not here. Revenue, EBITDA, debt and the rest belong to
+ * arpa_projects, because they are a snapshot taken during a process, and
+ * saveProject already writes them.
+ */
+export async function enrichCompany(input: unknown): Promise<ActionResult> {
+  const parsed = enrichSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos no válidos' };
+  }
+
+  const { company_id, project_id, ...fields } = parsed.data;
+  const supabase = createClient();
+
+  const { error } = await supabase
+    .from('arpa_companies')
+    .update({ ...fields, enriched_at: new Date().toISOString() })
+    .eq('id', company_id);
+
+  if (error) {
+    const hint = error.code === '23505' ? ' (ese CIF ya existe en otra empresa)' : '';
+    return { ok: false, message: `${error.message}${hint}` };
+  }
+
+  if (project_id) revalidatePath(`/${project_id}`);
+  revalidatePath('/pipeline');
+  return { ok: true, message: 'Ficha actualizada' };
+}
+
+const documentSchema = z.object({
+  project_id: uuid,
+  company_id: uuid.nullable().optional(),
+  title: z.string().trim().min(2).max(300),
+  /** NOT NULL in the table, with default 'Other'. Never send null. */
+  doc_type: z.enum(DOC_TYPES).default('Other'),
+  /**
+   * Required, not optional. The table has
+   *   check (storage_path is not null or external_url is not null)
+   * and we never write storage_path, so an empty URL would fail at the
+   * database. Better to reject it here with a sentence a human can act on.
+   */
+  external_url: z.string().trim().url({ message: 'Hace falta un enlace válido' }).max(600),
+  period: text(60),
+  uploaded_by: text(120),
+});
+
+/**
+ * Registers a document by LINK, not by upload.
+ *
+ * The team already keeps files in Drive and that is where version history and
+ * sharing live. Re-uploading into Supabase Storage would create a second copy
+ * that immediately starts drifting from the one people actually edit. So this
+ * records where the document is, and the storage_path column stays free for the
+ * day we decide we do want custody of the file.
+ */
+export async function addDocument(input: unknown): Promise<ActionResult> {
+  const parsed = documentSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos no válidos' };
+  }
+
+  const supabase = createClient();
+  const { error } = await supabase.from('arpa_documents').insert(parsed.data);
+
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath(`/${parsed.data.project_id}`);
+  return { ok: true, message: 'Documento registrado' };
 }

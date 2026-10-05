@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
 import { promoteOrigination, setOriginationStatus } from './actions';
+import SabiButton from './_sabi-button';
 
 const btn = 'rounded border px-2 py-0.5 text-[11px] transition disabled:opacity-40';
 
@@ -12,10 +13,18 @@ export default function RowActions({
   regKey,
   status,
   projectId,
+  legalName,
+  hoja,
+  province,
+  sabiUrl,
 }: {
   regKey: string;
   status: string;
   projectId: string | null;
+  legalName: string;
+  hoja: string | null;
+  province: string;
+  sabiUrl: string;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -30,17 +39,23 @@ export default function RowActions({
     });
   }
 
+  // Already promoted. SABI stays available, because the financials usually get
+  // checked after the project exists, not before.
   if (projectId) {
     return (
-      <Link href={`/${projectId}`} className="text-[11px] text-brand hover:underline">
-        ver proyecto
-      </Link>
+      <div className="flex items-center gap-2">
+        <Link href={`/${projectId}`} className="text-[11px] text-brand hover:underline">
+          ver proyecto
+        </Link>
+        <SabiButton legalName={legalName} hoja={hoja} province={province} sabiUrl={sabiUrl} />
+      </div>
     );
   }
 
   return (
     <div className="flex flex-col items-start gap-1">
       <div className="flex gap-1">
+        <SabiButton legalName={legalName} hoja={hoja} province={province} sabiUrl={sabiUrl} />
         <button
           type="button"
           disabled={pending}

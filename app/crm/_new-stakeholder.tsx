@@ -3,7 +3,8 @@
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
-import { STAKEHOLDER_KINDS, createStakeholder } from '../actions';
+import { createStakeholder } from '../actions';
+import { STAKEHOLDER_KINDS } from '@/lib/arpa/lists';
 
 const field = 'w-full rounded border border-border bg-bg px-2.5 py-1.5 text-sm text-ink outline-none focus:border-brand';
 const label = 'mb-1 block text-[11px] uppercase tracking-wider text-ink-mute';

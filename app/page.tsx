@@ -48,6 +48,10 @@ const PHASES = [
 
 const PHASE_BY_KEY = new Map(PHASES.map((p) => [p.key as string, p]));
 
+// Overridable, because we have no documented deep-link search for this SABI
+// seat. Point it at the real query URL when we have one, no code change.
+const SABI_URL = process.env.SABI_URL || 'https://sabi.bvdinfo.com/';
+
 const ROLE_LABELS: Record<string, string> = {
   maker: 'fabrica',
   trader: 'comercializa',
@@ -312,7 +316,15 @@ export default async function OriginationPage({
                     ) : null}
                   </td>
                   <td className="px-3 py-2.5">
-                    <RowActions regKey={r.reg_key} status={r.status} projectId={r.project_id} />
+                    <RowActions
+                      regKey={r.reg_key}
+                      status={r.status}
+                      projectId={r.project_id}
+                      legalName={r.legal_name}
+                      hoja={r.hoja}
+                      province={r.province}
+                      sabiUrl={SABI_URL}
+                    />
                   </td>
                 </tr>
               ))}
