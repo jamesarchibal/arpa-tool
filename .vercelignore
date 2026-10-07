@@ -1,0 +1,19 @@
+# The Vercel CLI does NOT read .gitignore, it applies its own built-in rules,
+# so anything large that is gitignored still has to be listed again here.
+#
+# Without this file the CLI tried to pack .borme-cache: 15,514 files and 743 MB
+# of raw BORME XML, against a 15,000 file limit. It died while building the
+# tarball and exited 0 without creating a deployment, which looks exactly like
+# a successful deploy from the outside. The repo itself is 44 files.
+
+# Raw BORME XML, downloaded by scripts/borme-probe.mjs and only ever read
+# locally. The deployed app reads the loaded rows out of Supabase.
+.borme-cache
+
+node_modules
+.next
+.vercel
+.git
+
+supabase/.temp
+tsconfig.tsbuildinfo
