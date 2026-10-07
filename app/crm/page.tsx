@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 import { getLinkTargets, getStakeholders } from '@/lib/arpa/db';
+import { ExportButton } from '../_export-button';
 import TopNav from '../_topnav';
 import Links from './_links';
 import NewStakeholderForm from './_new-stakeholder';
@@ -96,7 +97,12 @@ export default async function CrmPage({
             </Link>
           ) : null}
         </form>
-        <NewStakeholderForm />
+        <div className="flex items-center gap-2">
+          {/* The route reads the type filter as `tipo`, because `kind` already
+              names the export itself. */}
+          <ExportButton kind="contactos" params={{ tipo: searchParams.kind, q: searchParams.q }} />
+          <NewStakeholderForm />
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

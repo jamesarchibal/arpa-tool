@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 import { getOrigination, type OriginationRow } from '@/lib/arpa/db';
+import { ExportButton } from './_export-button';
 import RowActions from './_row-actions';
 import TopNav from './_topnav';
 
@@ -149,7 +150,8 @@ export default async function OriginationPage({
     <div className="space-y-6">
       <TopNav active="origination" />
 
-      <div>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
         <h1 className="text-2xl font-bold text-ink">🧭 ARPA · Originación</h1>
         <p className="mt-1 max-w-3xl text-sm text-ink-mute">
           Empresas sacadas del BORME, el boletín oficial del Registro Mercantil. Entra en la lista
@@ -159,6 +161,16 @@ export default async function OriginationPage({
           agrupados el proceso está avanzado y casi seguro hay asesor. El BORME no publica CIF, así
           que la clave es provincia más hoja registral.
         </p>
+        </div>
+        <ExportButton
+          kind="originacion"
+          params={{
+            province: searchParams.province,
+            subsector: searchParams.subsector,
+            status: searchParams.status,
+            phase: searchParams.phase,
+          }}
+        />
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

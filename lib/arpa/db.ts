@@ -297,6 +297,43 @@ export async function getOrigination(filters: OriginationFilters = {}): Promise<
   };
 }
 
+/**
+ * Every matching origination row, for the CSV export.
+ *
+ * `getOrigination` caps at ORIGINATION_PAGE because the screen only shows a
+ * page, and PostgREST caps an unbounded select at 1,000 anyway, so an export
+ * that reused either would silently hand over a truncated file. Same ordering
+ * as the screen so the file matches what the user was looking at.
+ */
+export async function getOriginationAll(filters: OriginationFilters = {}): Promise<OriginationRow[]> {
+  const supabase = createClient();
+  const rows: OriginationRow[] = [];
+
+  for (let from = 0; ; from += FACET_PAGE) {
+    let q = supabase
+      .from('arpa_origination')
+      .select('*')
+      .order('first_signal_at', { ascending: false, nullsFirst: false })
+      .order('prep_count', { ascending: false })
+      .order('legal_name')
+      .range(from, from + FACET_PAGE - 1);
+
+    if (filters.province) q = q.eq('province', filters.province);
+    if (filters.subsector) q = q.eq('subsector', filters.subsector);
+    if (filters.status) q = q.eq('status', filters.status);
+    if (filters.phase) q = q.eq('phase', filters.phase);
+
+    const page = await q;
+    if (page.error) throw new Error(`arpa_origination export: ${page.error.message}`);
+
+    const got = (page.data ?? []) as OriginationRow[];
+    rows.push(...got);
+    if (got.length < FACET_PAGE) break;
+  }
+
+  return rows;
+}
+
 export async function getProjectDetail(id: string): Promise<ProjectDetail | null> {
   const supabase = createClient();
 

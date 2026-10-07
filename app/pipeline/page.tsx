@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import { getPipeline, getTaxonomyOptions, type PipelineRow } from '@/lib/arpa/db';
 import { STAGES } from '@/lib/arpa/scoring';
+import { ExportButton } from '../_export-button';
 import NewLeadForm from './_new-lead';
 import TopNav from '../_topnav';
 
@@ -105,7 +106,10 @@ export default async function ArpaPage({ searchParams }: { searchParams: { stage
             los 13 kill criteria. Escala 0-100. Puntúa Marc; cada puntuación queda firmada y con fecha.
           </p>
         </div>
-        <NewLeadForm taxonomy={taxonomy} />
+        <div className="flex items-center gap-2">
+          <ExportButton kind="pipeline" />
+          <NewLeadForm taxonomy={taxonomy} />
+        </div>
       </div>
 
       <Summary rows={rows} />
