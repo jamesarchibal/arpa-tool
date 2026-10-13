@@ -11,6 +11,35 @@
  * typecheck and build both pass and the page 500s in production.
  */
 
+/**
+ * arpa_projects.stage · Funnel_Stages, in blueprint order.
+ *
+ * The blueprint names nine; `Sourcing` sits in front because origination
+ * promotes into it, and `Closed` is terminal. Marc's own wording on the
+ * 2026-10-08 call maps onto the back half: LOI sent and accepted, due
+ * diligence, SPA negotiation, closed, portfolio.
+ *
+ * THE ONE PLACE TO EDIT. Changing this list also needs a migration, because
+ * `arpa_projects_stage_check` enumerates the same strings and will reject
+ * anything new. Widen the constraint FIRST, then edit here, or saving a row in
+ * a brand-new stage fails at the database.
+ */
+export const STAGES = [
+  'Sourcing',
+  'Screening',
+  'Assessment',
+  'Preliminary Financial Review',
+  'Investment Case',
+  'LOI & Exclusivity',
+  'Full Due Diligence',
+  'Final Investment Approval',
+  'Closing',
+  'Portfolio',
+  'Closed',
+] as const;
+
+export type Stage = (typeof STAGES)[number];
+
 /** arpa_stakeholders.kind */
 export const STAKEHOLDER_KINDS = [
   'Owner',
@@ -28,6 +57,9 @@ export const STAKEHOLDER_KINDS = [
   'Intermediary',
   'Other',
 ] as const;
+
+/** arpa_interactions.kind */
+export const INTERACTION_KINDS = ['Call', 'Meeting', 'Email', 'Message', 'Note', 'Site visit'] as const;
 
 /** arpa_companies.ownership_type */
 export const OWNERSHIP_TYPES = [

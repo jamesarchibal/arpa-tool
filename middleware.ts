@@ -19,5 +19,14 @@ export const config = {
   // Everything except the login page itself and Next's own assets.
   // '/' is listed separately: under basePath the catch-all compiles to a regex
   // that requires a slash after the prefix, so it never matches the bare root.
-  matcher: ['/', '/((?!login|_next/static|_next/image|favicon.ico).*)'],
+  //
+  // `api` is excluded because its callers are programs with no cookie jar: a
+  // password session cannot authenticate a POST from Marc's Claude, and a
+  // redirect to /login would just be swallowed as a 200 of HTML.
+  // WARNING: that makes every route under `app/api/` responsible for its OWN
+  // auth, sitting in front of a service-role database client. Any new file
+  // added there MUST check a secret before it touches Supabase. Today there is
+  // exactly one, `app/api/intake/route.ts`, and it rejects a bad bearer token
+  // in its first statement.
+  matcher: ['/', '/((?!api|login|_next/static|_next/image|favicon.ico).*)'],
 };

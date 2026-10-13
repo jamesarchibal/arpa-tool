@@ -9,8 +9,12 @@ import { STAKEHOLDER_KINDS } from '@/lib/arpa/lists';
 const field = 'w-full rounded border border-border bg-bg px-2.5 py-1.5 text-sm text-ink outline-none focus:border-brand';
 const label = 'mb-1 block text-[11px] uppercase tracking-wider text-ink-mute';
 
+/** The kinds for whom the investor block is worth asking about. */
+const INVESTOR_KINDS = new Set(['Investor', 'LP', 'Co-investor', 'Lender']);
+
 export default function NewStakeholderForm() {
   const [open, setOpen] = useState(false);
+  const [kind, setKind] = useState('Owner');
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
@@ -30,6 +34,11 @@ export default function NewStakeholderForm() {
         linkedin: raw.linkedin ? String(raw.linkedin) : null,
         city: raw.city ? String(raw.city) : null,
         notes: raw.notes ? String(raw.notes) : null,
+        invest_thesis: raw.invest_thesis ? String(raw.invest_thesis) : null,
+        sectors_in: raw.sectors_in ? String(raw.sectors_in) : null,
+        sectors_out: raw.sectors_out ? String(raw.sectors_out) : null,
+        ticket_min: raw.ticket_min ? String(raw.ticket_min) : null,
+        ticket_max: raw.ticket_max ? String(raw.ticket_max) : null,
       });
       if (!res.ok) {
         setError(res.message);
@@ -69,7 +78,13 @@ export default function NewStakeholderForm() {
           </div>
           <div>
             <label className={label} htmlFor="kind">Tipo</label>
-            <select id="kind" name="kind" className={field} defaultValue="Owner">
+            <select
+              id="kind"
+              name="kind"
+              className={field}
+              value={kind}
+              onChange={(e) => setKind(e.target.value)}
+            >
               {STAKEHOLDER_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
             </select>
           </div>
@@ -100,6 +115,47 @@ export default function NewStakeholderForm() {
             <input id="linkedin" name="linkedin" className={field} />
           </div>
         </div>
+
+        {/* Only for the people who write cheques. Asking an owner for his
+            investment thesis is noise, and noise is what stops a form being
+            filled in at all. */}
+        {INVESTOR_KINDS.has(kind) ? (
+          <div className="space-y-3 rounded border border-border bg-bg-elevated p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-mute">
+              Perfil inversor
+            </div>
+            <div>
+              <label className={label} htmlFor="invest_thesis">Tesis de inversión</label>
+              <textarea
+                id="invest_thesis"
+                name="invest_thesis"
+                rows={2}
+                className={field}
+                placeholder="Mayorías en industrial catalán con EBITDA recurrente"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={label} htmlFor="sectors_in">Invierte en</label>
+                <input id="sectors_in" name="sectors_in" className={field} placeholder="industrial, packaging" />
+              </div>
+              <div>
+                <label className={label} htmlFor="sectors_out">No invierte en</label>
+                <input id="sectors_out" name="sectors_out" className={field} placeholder="inmobiliario, retail" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={label} htmlFor="ticket_min">Ticket mínimo (M€)</label>
+                <input id="ticket_min" name="ticket_min" inputMode="decimal" className={field} />
+              </div>
+              <div>
+                <label className={label} htmlFor="ticket_max">Ticket máximo (M€)</label>
+                <input id="ticket_max" name="ticket_max" inputMode="decimal" className={field} />
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <div>
           <label className={label} htmlFor="notes">Notas</label>

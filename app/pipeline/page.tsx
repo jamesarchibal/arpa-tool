@@ -1,9 +1,10 @@
 import Link from 'next/link';
 
 import { getPipeline, getTaxonomyOptions, type PipelineRow } from '@/lib/arpa/db';
-import { STAGES } from '@/lib/arpa/scoring';
+import { STAGES } from '@/lib/arpa/lists';
 import { ExportButton } from '../_export-button';
 import NewLeadForm from './_new-lead';
+import StageSelect from './_stage-select';
 import TopNav from '../_topnav';
 
 export const dynamic = 'force-dynamic';
@@ -27,16 +28,6 @@ function ScorePill({ value, label }: { value: number | null; label: string }) {
   return (
     <span className={`inline-flex min-w-[46px] items-center justify-center rounded border px-1.5 py-0.5 text-[11px] font-semibold tabular-nums ${tone}`}>
       {label} {value}
-    </span>
-  );
-}
-
-function StageBadge({ stage }: { stage: string }) {
-  const i = STAGES.indexOf(stage as (typeof STAGES)[number]);
-  return (
-    <span className="whitespace-nowrap rounded border border-border bg-bg-elevated px-2 py-0.5 text-[11px] text-ink-soft">
-      {i >= 0 ? `${i + 1}. ` : ''}
-      {stage}
     </span>
   );
 }
@@ -92,7 +83,18 @@ function Summary({ rows }: { rows: PipelineRow[] }) {
 export default async function ArpaPage({ searchParams }: { searchParams: { stage?: string } }) {
   const [rows, taxonomy] = await Promise.all([getPipeline(), getTaxonomyOptions()]);
   const stageFilter = searchParams.stage;
-  const visible = stageFilter ? rows.filter((r) => r.stage === stageFilter) : rows;
+
+  // Best screen score first, unscored last. A SABI import lands hundreds of
+  // rows in Sourcing at once, so without this the list is in whatever order the
+  // export happened to be in and the point of scoring it is lost.
+  const visible = (stageFilter ? rows.filter((r) => r.stage === stageFilter) : rows)
+    .slice()
+    .sort((a, b) => {
+      if (a.qss === null && b.qss === null) return a.legal_name.localeCompare(b.legal_name, 'es');
+      if (a.qss === null) return 1;
+      if (b.qss === null) return -1;
+      return Number(b.qss) - Number(a.qss);
+    });
 
   return (
     <div className="space-y-6">
@@ -187,7 +189,7 @@ export default async function ArpaPage({ searchParams }: { searchParams: { stage
                     {r.subsector ?? <span className="text-ink-faint">sin clasificar</span>}
                     {r.sector ? <div className="text-[11px] text-ink-faint">{r.sector}</div> : null}
                   </td>
-                  <td className="px-3 py-2.5"><StageBadge stage={r.stage} /></td>
+                  <td className="px-3 py-2.5"><StageSelect id={r.id} stage={r.stage} /></td>
                   <td className="px-3 py-2.5">
                     <DecisionBadge decision={r.decision_status} veto={r.has_veto} />
                     {r.pass_reason ? (

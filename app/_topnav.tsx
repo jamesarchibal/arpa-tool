@@ -3,12 +3,17 @@ import Link from 'next/link';
 // Originación leads, because finding the companies is the step before judging
 // them, and it is the part ARPA asked for first.
 const TABS = [
+  { href: '/importar', label: 'Importar', key: 'importar' },
   { href: '/', label: 'Originación', key: 'origination' },
   { href: '/pipeline', label: 'Pipeline', key: 'pipeline' },
   { href: '/crm', label: 'Contactos', key: 'crm' },
 ] as const;
 
-export default function TopNav({ active }: { active: 'origination' | 'pipeline' | 'crm' }) {
+export default function TopNav({
+  active,
+}: {
+  active: 'importar' | 'origination' | 'pipeline' | 'crm';
+}) {
   return (
     <header className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-border pb-4">
       <nav className="flex items-center gap-2">

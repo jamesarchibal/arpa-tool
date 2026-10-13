@@ -49,27 +49,11 @@ export type PassReason =
 
 export type ModelId = 'qss' | 'om' | 'pfr';
 
-/**
- * Funnel_Stages, in blueprint order. The blueprint names nine; `Sourcing` sits
- * in front because origination promotes into it, and `Closed` is terminal.
- * Mirrored by the arpa_projects_stage_check constraint, so the two must be
- * changed together.
- */
-export const STAGES = [
-  'Sourcing',
-  'Screening',
-  'Assessment',
-  'Preliminary Financial Review',
-  'Investment Case',
-  'LOI & Exclusivity',
-  'Full Due Diligence',
-  'Final Investment Approval',
-  'Closing',
-  'Portfolio',
-  'Closed',
-] as const;
-
-export type Stage = (typeof STAGES)[number];
+// Re-exported so the scoring module keeps its old surface. The list itself now
+// lives in `lists.ts`, because the stage <select> in the pipeline is a client
+// component and importing it from here would pull this whole engine into the
+// browser bundle.
+export { STAGES, type Stage } from './lists';
 
 export interface TaxonomyRow {
   sector: string;

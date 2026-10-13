@@ -466,6 +466,17 @@ export interface StakeholderRow {
   linkedin: string | null;
   city: string | null;
   notes: string | null;
+  /**
+   * The investor profile. Null on everyone who is not an investor, which is
+   * most of the table, so the UI has to tolerate an all-null block rather than
+   * assume it is there.
+   */
+  invest_thesis: string | null;
+  sectors_in: string | null;
+  sectors_out: string | null;
+  /** Ticket size in M€, the unit of every other money field in this schema. */
+  ticket_min: number | null;
+  ticket_max: number | null;
   links: StakeholderLink[];
   interaction_count: number;
   last_interaction_at: string | null;
@@ -489,7 +500,9 @@ export async function getStakeholders(filters: { kind?: string; q?: string } = {
 
   let people = supabase
     .from('arpa_stakeholders')
-    .select('id, full_name, org, kind, email, phone, linkedin, city, notes')
+    .select(
+      'id, full_name, org, kind, email, phone, linkedin, city, notes, invest_thesis, sectors_in, sectors_out, ticket_min, ticket_max',
+    )
     .order('full_name');
 
   if (filters.kind) people = people.eq('kind', filters.kind);
@@ -594,6 +607,102 @@ export async function getStakeholders(filters: { kind?: string; q?: string } = {
       .map(([kind, count]) => ({ kind, count }))
       .sort((a, b) => b.count - a.count || a.kind.localeCompare(b.kind)),
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Agenda.
+//
+// There is no separate task table. An agenda item IS the `next_step` of an
+// interaction, which is the only way a next step can never disagree with the
+// conversation that produced it. The cost is that a next step is closed by
+// stamping `next_step_done_at`, not by deleting anything, so the trail survives.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface AgendaItem {
+  id: string;
+  next_step: string;
+  /** Date only, so comparisons must be on `YYYY-MM-DD` strings, not Date objects. */
+  next_step_due: string | null;
+  happened_at: string;
+  summary: string | null;
+  stakeholder_id: string | null;
+  stakeholder_name: string | null;
+  project_id: string | null;
+  company_name: string | null;
+  /** True when the due date is today or has passed. Null dates are never overdue. */
+  overdue: boolean;
+}
+
+export async function getAgenda(): Promise<AgendaItem[]> {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from('arpa_interactions')
+    .select(
+      'id, next_step, next_step_due, happened_at, summary, stakeholder_id, project_id, company_id, arpa_stakeholders(full_name)',
+    )
+    .not('next_step', 'is', null)
+    .is('next_step_done_at', null)
+    .order('next_step_due', { ascending: true, nullsFirst: false })
+    .limit(200);
+
+  if (error) throw new Error(`arpa_interactions agenda: ${error.message}`);
+
+  const rows = (data ?? []) as unknown as {
+    id: string;
+    next_step: string | null;
+    next_step_due: string | null;
+    happened_at: string;
+    summary: string | null;
+    stakeholder_id: string | null;
+    project_id: string | null;
+    company_id: string | null;
+    arpa_stakeholders: { full_name: string } | null;
+  }[];
+
+  // One extra pass for the company name, which is what a person reading the
+  // agenda actually recognises. The project id alone is unreadable.
+  const projectIds = [...new Set(rows.map((r) => r.project_id).filter((v): v is string => Boolean(v)))];
+  const companyIds = [...new Set(rows.map((r) => r.company_id).filter((v): v is string => Boolean(v)))];
+
+  const [projects, companies] = await Promise.all([
+    projectIds.length
+      ? supabase.from('arpa_projects').select('id, arpa_companies(legal_name)').in('id', projectIds)
+      : Promise.resolve({ data: [], error: null }),
+    companyIds.length
+      ? supabase.from('arpa_companies').select('id, legal_name').in('id', companyIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  const byProject = new Map(
+    ((projects.data ?? []) as unknown as { id: string; arpa_companies: { legal_name: string } | null }[]).map((p) => [
+      p.id,
+      p.arpa_companies?.legal_name ?? null,
+    ]),
+  );
+  const byCompany = new Map(
+    ((companies.data ?? []) as { id: string; legal_name: string }[]).map((c) => [c.id, c.legal_name]),
+  );
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  return rows
+    .filter((r): r is typeof r & { next_step: string } => Boolean(r.next_step?.trim()))
+    .map((r) => ({
+      id: r.id,
+      next_step: r.next_step,
+      next_step_due: r.next_step_due,
+      happened_at: r.happened_at,
+      summary: r.summary,
+      stakeholder_id: r.stakeholder_id,
+      stakeholder_name: r.arpa_stakeholders?.full_name ?? null,
+      project_id: r.project_id,
+      company_name:
+        (r.project_id ? byProject.get(r.project_id) : null) ??
+        (r.company_id ? byCompany.get(r.company_id) : null) ??
+        null,
+      overdue: r.next_step_due !== null && r.next_step_due <= today,
+    }));
 }
 
 /** Companies and their project, for the "link to" picker on the CRM page. */

@@ -4,9 +4,11 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { createClient } from '@/lib/supabase/server';
+import { intakeBatchSchema, runIntake, type IntakeResult } from '@/lib/arpa/intake';
 import {
   DOC_TYPES,
   ENRICH_SOURCES,
+  INTERACTION_KINDS,
   OWNERSHIP_TYPES,
   STAKEHOLDER_KINDS,
 } from '@/lib/arpa/lists';
@@ -81,6 +83,63 @@ export async function saveProject(input: unknown): Promise<ActionResult> {
   revalidatePath(`/${id}`);
   revalidatePath('/pipeline');
   return { ok: true, message: 'Datos guardados' };
+}
+
+/**
+ * Move one opportunity between stages from the list, without opening it.
+ *
+ * Separate from `saveProject` on purpose: that one takes the whole financial
+ * form, so reusing it from the list would mean round-tripping thirty fields to
+ * change one, and any field the list did not know about would be nulled.
+ */
+export async function setStage(input: unknown): Promise<ActionResult> {
+  const parsed = z.object({ id: uuid, stage: z.enum(STAGES) }).safeParse(input);
+  if (!parsed.success) return { ok: false, message: 'Etapa no válida' };
+
+  const supabase = createClient();
+  const { error } = await supabase
+    .from('arpa_projects')
+    .update({ stage: parsed.data.stage, updated_at: new Date().toISOString() })
+    .eq('id', parsed.data.id);
+
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath('/pipeline');
+  revalidatePath(`/${parsed.data.id}`);
+  return { ok: true, message: `Movido a ${parsed.data.stage}` };
+}
+
+/**
+ * Take a batch of SABI rows and turn each one into a scored opportunity.
+ *
+ * The caller is Marc pasting what his own Claude produced from the export, so
+ * the failure mode to design for is a slightly wrong payload, not a hostile
+ * one. `runIntake` reports per row and never aborts the whole batch for one bad
+ * line, because losing 400 good rows to one bad one would be unusable.
+ */
+export async function importBatch(input: unknown): Promise<ActionResult & { result?: IntakeResult }> {
+  const parsed = intakeBatchSchema.safeParse(input);
+  if (!parsed.success) {
+    const first = parsed.error.issues[0];
+    return {
+      ok: false,
+      message: first ? `${first.path.join('.') || 'lote'}: ${first.message}` : 'Lote no válido',
+    };
+  }
+
+  try {
+    const result = await runIntake(parsed.data, 'marc');
+    revalidatePath('/pipeline');
+    return {
+      ok: result.rejected === 0,
+      message:
+        `${result.created} nuevas, ${result.updated} actualizadas` +
+        (result.rejected ? `, ${result.rejected} rechazadas` : ''),
+      result,
+    };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : 'Error desconocido' };
+  }
 }
 
 const scoreSchema = z.object({
@@ -362,6 +421,17 @@ const stakeholderSchema = z.object({
   linkedin: text(300),
   city: text(120),
   notes: text(4000),
+  /**
+   * The investor profile Marc described: what they invest in, what they do not,
+   * and the cheque they can write. Blank on everyone who is not an investor,
+   * which is fine, these are additive columns and nothing reads them as required.
+   */
+  invest_thesis: text(4000),
+  sectors_in: text(1000),
+  sectors_out: text(1000),
+  /** M€. Same unit as the project financials, so no conversion at read time. */
+  ticket_min: money,
+  ticket_max: money,
 });
 
 export async function createStakeholder(input: unknown): Promise<ActionResult & { id?: string }> {
@@ -490,6 +560,86 @@ export async function addProjectStakeholder(input: unknown): Promise<ActionResul
   revalidatePath(`/${project_id}`);
   revalidatePath('/crm');
   return { ok: true, message: 'Persona añadida' };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Interactions and the agenda.
+//
+// An agenda item is not its own record: it is the `next_step` of an interaction.
+// That is deliberate. A task table would let the to-do and the conversation that
+// produced it drift apart, and the thing ARPA needs to trust is "what did we
+// promise this person, and when".
+// ─────────────────────────────────────────────────────────────────────────────
+
+const interactionSchema = z
+  .object({
+    kind: z.enum(INTERACTION_KINDS),
+    stakeholder_id: uuid.nullable().optional(),
+    project_id: uuid.nullable().optional(),
+    company_id: uuid.nullable().optional(),
+    /** A date input, so `YYYY-MM-DD`. Empty string means no date, not today. */
+    happened_at: z.string().trim().max(40).nullable().optional(),
+    summary: text(1000),
+    detail: text(8000),
+    next_step: text(1000),
+    next_step_due: z
+      .string()
+      .trim()
+      .max(10)
+      .nullable()
+      .optional()
+      // A malformed date becomes no date rather than an error: losing the due
+      // date is recoverable, losing the whole logged interaction is not.
+      .transform((v) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null)),
+    logged_by: text(120),
+  })
+  .refine((v) => v.summary || v.next_step, { message: 'Escribe un resumen o un siguiente paso' });
+
+export async function logInteraction(input: unknown): Promise<ActionResult> {
+  const parsed = interactionSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos no válidos' };
+  }
+
+  const { happened_at, ...rest } = parsed.data;
+  const supabase = createClient();
+  const { error } = await supabase.from('arpa_interactions').insert({
+    ...rest,
+    stakeholder_id: rest.stakeholder_id ?? null,
+    project_id: rest.project_id ?? null,
+    company_id: rest.company_id ?? null,
+    next_step_due: rest.next_step_due ?? null,
+    // The column defaults to now(), so an empty field has to be left out of the
+    // payload entirely rather than sent as null, which would violate not null.
+    ...(happened_at ? { happened_at: new Date(happened_at).toISOString() } : {}),
+  });
+
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath('/crm');
+  if (parsed.data.project_id) revalidatePath(`/${parsed.data.project_id}`);
+  return { ok: true, message: 'Registrado' };
+}
+
+/**
+ * Tick an agenda item off. The next step text stays, only the closing stamp is
+ * written, so the promise and the fact it was kept are both still on the record.
+ */
+export async function completeNextStep(input: unknown): Promise<ActionResult> {
+  const parsed = z.object({ id: uuid, project_id: uuid.nullable().optional() }).safeParse(input);
+  if (!parsed.success) return { ok: false, message: 'Datos no válidos' };
+
+  const supabase = createClient();
+  const { error } = await supabase
+    .from('arpa_interactions')
+    .update({ next_step_done_at: new Date().toISOString() })
+    .eq('id', parsed.data.id);
+
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath('/crm');
+  if (parsed.data.project_id) revalidatePath(`/${parsed.data.project_id}`);
+  return { ok: true, message: 'Hecho' };
 }
 
 const int = (min: number, max: number) =>

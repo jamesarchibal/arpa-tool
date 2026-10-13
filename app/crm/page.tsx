@@ -1,10 +1,12 @@
 import Link from 'next/link';
 
-import { getLinkTargets, getStakeholders } from '@/lib/arpa/db';
+import { getAgenda, getLinkTargets, getStakeholders } from '@/lib/arpa/db';
 import { ExportButton } from '../_export-button';
 import TopNav from '../_topnav';
+import Agenda from './_agenda';
 import Links from './_links';
 import NewStakeholderForm from './_new-stakeholder';
+import PersonPanel from './_person-panel';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,10 +52,17 @@ export default async function CrmPage({
 }: {
   searchParams: { kind?: string; q?: string };
 }) {
-  const [view, targets] = await Promise.all([
+  const [view, targets, agenda] = await Promise.all([
     getStakeholders({ kind: searchParams.kind, q: searchParams.q }),
     getLinkTargets(),
+    getAgenda(),
   ]);
+
+  // The agenda's person picker must offer EVERYONE, not the filtered list, or a
+  // search in the box above silently narrows who a step can be assigned to.
+  // Only pay for the second read when a filter is actually on.
+  const filtered = Boolean(searchParams.kind || searchParams.q);
+  const everyone = filtered ? (await getStakeholders()).rows : view.rows;
 
   const chipHref = (kind: string | null) => {
     const next = new URLSearchParams();
@@ -76,6 +85,8 @@ export default async function CrmPage({
           antes de empezar a llamar.
         </p>
       </div>
+
+      <Agenda items={agenda} people={everyone.map((p) => ({ id: p.id, full_name: p.full_name }))} />
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         {/* No `action`: a GET form posts to the current URL, which keeps the
@@ -126,6 +137,7 @@ export default async function CrmPage({
               <th className={th}>Contacto</th>
               <th className={th}>Operaciones</th>
               <th className={th}>Último contacto</th>
+              <th className={th}>Ficha</th>
             </tr>
           </thead>
           <tbody>
@@ -164,11 +176,14 @@ export default async function CrmPage({
                     </>
                   )}
                 </td>
+                <td className={td}>
+                  <PersonPanel person={r} />
+                </td>
               </tr>
             ))}
             {view.rows.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-3 py-8 text-center text-sm text-ink-mute">
+                <td colSpan={6} className="px-3 py-8 text-center text-sm text-ink-mute">
                   {searchParams.q || searchParams.kind
                     ? 'Ningún contacto con ese filtro.'
                     : 'Todavía no hay contactos. Empieza por el propietario de una empresa del pipeline.'}
