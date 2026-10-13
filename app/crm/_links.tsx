@@ -11,6 +11,8 @@ export interface LinkTarget {
   company_id: string;
   project_id: string | null;
   legal_name: string;
+  /** The project's stage, or null when the company has no project at all. */
+  stage: string | null;
 }
 
 const btn = 'rounded border px-2 py-0.5 text-[11px] transition disabled:opacity-40';

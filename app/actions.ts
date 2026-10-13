@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { createClient } from '@/lib/supabase/server';
+import { parseCalendarIcs, parseContactsCsv } from '@/lib/arpa/contacts-import';
 import { intakeBatchSchema, runIntake, type IntakeResult } from '@/lib/arpa/intake';
 import {
   DOC_TYPES,
@@ -104,6 +105,9 @@ export async function setStage(input: unknown): Promise<ActionResult> {
 
   if (error) return { ok: false, message: error.message };
 
+  // '/' too: moving a company off Sourcing is exactly what "send it to the
+  // pipeline" means on the Originación screen, so that list has to change.
+  revalidatePath('/');
   revalidatePath('/pipeline');
   revalidatePath(`/${parsed.data.id}`);
   return { ok: true, message: `Movido a ${parsed.data.stage}` };
@@ -112,10 +116,13 @@ export async function setStage(input: unknown): Promise<ActionResult> {
 /**
  * Take a batch of SABI rows and turn each one into a scored opportunity.
  *
- * The caller is Marc pasting what his own Claude produced from the export, so
- * the failure mode to design for is a slightly wrong payload, not a hostile
- * one. `runIntake` reports per row and never aborts the whole batch for one bad
- * line, because losing 400 good rows to one bad one would be unusable.
+ * The rows arrive from `lib/arpa/sabi-xls.ts` running in the BROWSER, which is
+ * what keeps a 20 company export under Vercel's 4.5 MB body cap. That makes
+ * this the trust boundary: the payload is revalidated here from scratch, and
+ * `runIntake` rejects implausible magnitudes, so a wrong client parse cannot
+ * write a corrupt figure. `runIntake` reports per row and never aborts the
+ * whole batch for one bad line, because losing 400 good rows to one bad one
+ * would be unusable.
  */
 export async function importBatch(input: unknown): Promise<ActionResult & { result?: IntakeResult }> {
   const parsed = intakeBatchSchema.safeParse(input);
@@ -129,6 +136,7 @@ export async function importBatch(input: unknown): Promise<ActionResult & { resu
 
   try {
     const result = await runIntake(parsed.data, 'marc');
+    revalidatePath('/');
     revalidatePath('/pipeline');
     return {
       ok: result.rejected === 0,
@@ -307,96 +315,6 @@ export async function createLead(input: unknown): Promise<ActionResult & { proje
   return { ok: true, message: 'Lead creado', projectId: project.id };
 }
 
-const originationStatusSchema = z.object({
-  reg_key: z.string().min(3).max(200),
-  status: z.enum(['new', 'shortlisted', 'discarded']),
-});
-
-/** Marc's triage on the BORME shortlist. `promoted` is set by promoteOrigination. */
-export async function setOriginationStatus(input: unknown): Promise<ActionResult> {
-  const parsed = originationStatusSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, message: 'Datos no válidos' };
-
-  const supabase = createClient();
-  const { error } = await supabase
-    .from('arpa_origination')
-    .update({ status: parsed.data.status, updated_at: new Date().toISOString() })
-    .eq('reg_key', parsed.data.reg_key);
-
-  if (error) return { ok: false, message: error.message };
-
-  revalidatePath('/');
-  return { ok: true, message: 'Guardado' };
-}
-
-/**
- * Turn a BORME row into a real project.
- *
- * BORME has no CIF, so the company is created without one and Marc fills it in
- * later. The origination row keeps the project id, so promoting twice is a
- * no-op rather than a duplicate.
- */
-export async function promoteOrigination(input: unknown): Promise<ActionResult & { projectId?: string }> {
-  const parsed = z.object({ reg_key: z.string().min(3).max(200) }).safeParse(input);
-  if (!parsed.success) return { ok: false, message: 'Datos no válidos' };
-
-  const supabase = createClient();
-  const { data: row, error: rErr } = await supabase
-    .from('arpa_origination')
-    .select('reg_key, legal_name, province, subsector, cnae, objeto, project_id')
-    .eq('reg_key', parsed.data.reg_key)
-    .maybeSingle();
-
-  if (rErr) return { ok: false, message: rErr.message };
-  if (!row) return { ok: false, message: 'Esa empresa no está en la lista' };
-  if (row.project_id) return { ok: true, message: 'Ya estaba en el pipeline', projectId: row.project_id };
-
-  let taxonomyId: number | null = null;
-  if (row.subsector) {
-    const { data: tax } = await supabase
-      .from('arpa_taxonomy')
-      .select('id')
-      .eq('subsector', row.subsector)
-      .maybeSingle();
-    taxonomyId = tax?.id ?? null;
-  }
-
-  const { data: company, error: cErr } = await supabase
-    .from('arpa_companies')
-    .insert({
-      legal_name: row.legal_name,
-      country: 'ES',
-      region: row.province,
-      taxonomy_id: taxonomyId,
-      taxonomy_fit: taxonomyId ? 'in' : 'adjacent',
-      cnae: row.cnae,
-      notes: row.objeto,
-    })
-    .select('id')
-    .single();
-
-  if (cErr) return { ok: false, message: cErr.message };
-
-  const { data: project, error: pErr } = await supabase
-    .from('arpa_projects')
-    .insert({ company_id: company.id, stage: 'Sourcing', source: `BORME ${row.reg_key}` })
-    .select('id')
-    .single();
-
-  if (pErr) return { ok: false, message: pErr.message };
-
-  const { error: uErr } = await supabase
-    .from('arpa_origination')
-    .update({ status: 'promoted', project_id: project.id, updated_at: new Date().toISOString() })
-    .eq('reg_key', row.reg_key);
-
-  if (uErr) return { ok: false, message: uErr.message };
-
-  revalidatePath('/');
-  revalidatePath('/pipeline');
-  return { ok: true, message: 'Pasada al pipeline', projectId: project.id };
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Stakeholder CRM. The blueprint's Contacts + Sources, as one person table and
 // a link table, so a banker who appears on four deals is one record.
@@ -434,18 +352,53 @@ const stakeholderSchema = z.object({
   ticket_max: money,
 });
 
+/**
+ * Create a contact, optionally attached to a company in the same call.
+ *
+ * The company is optional because a banker you met at a conference belongs to
+ * nobody yet. It is on this form because the usual case is the opposite: you are
+ * writing down the owner OF a specific company you just sent to the pipeline,
+ * and making that a second step on a second screen is how contacts end up
+ * floating unattached.
+ */
 export async function createStakeholder(input: unknown): Promise<ActionResult & { id?: string }> {
-  const parsed = stakeholderSchema.safeParse(input);
+  const parsed = stakeholderSchema
+    .extend({
+      company_id: uuid.nullable().optional(),
+      project_id: uuid.nullable().optional(),
+      role: text(120),
+    })
+    .safeParse(input);
   if (!parsed.success) return { ok: false, message: 'Datos no válidos' };
 
+  const { company_id, project_id, role, ...person } = parsed.data;
   const supabase = createClient();
   const { data, error } = await supabase
     .from('arpa_stakeholders')
-    .insert(parsed.data)
+    .insert(person)
     .select('id')
     .single();
 
   if (error) return { ok: false, message: error.message };
+
+  if (company_id || project_id) {
+    const { error: lErr } = await supabase.from('arpa_stakeholder_links').insert({
+      stakeholder_id: data.id,
+      company_id: company_id ?? null,
+      project_id: project_id ?? null,
+      role,
+    });
+    // The person exists. Say that, or the next attempt creates a duplicate.
+    if (lErr) {
+      revalidatePath('/crm');
+      return {
+        ok: false,
+        message: `Contacto creado pero sin vincular: ${lErr.message}`,
+        id: data.id,
+      };
+    }
+    if (project_id) revalidatePath(`/${project_id}`);
+  }
 
   revalidatePath('/crm');
   return { ok: true, message: 'Contacto creado', id: data.id };
@@ -754,4 +707,303 @@ export async function addDocument(input: unknown): Promise<ActionResult> {
 
   revalidatePath(`/${parsed.data.project_id}`);
   return { ok: true, message: 'Documento registrado' };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bulk import of contacts and meetings.
+//
+// Both of these files get uploaded MORE THAN ONCE: you export your address book
+// again next month and drop the new one in. So the only interesting question is
+// not "can I read the file" but "what happens on the second upload", and the
+// answer has to be an update, never a duplicate.
+//
+// The text is parsed HERE and not in the browser, unlike the SABI workbook. A
+// contacts export is text and measured in hundreds of kilobytes, so it fits in a
+// request body with room to spare, and parsing server-side means there is only
+// one parser and therefore no trust boundary to defend.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ImportReport extends ActionResult {
+  created: number;
+  updated: number;
+  skipped: number;
+  warnings: string[];
+}
+
+const fail = (message: string): ImportReport => ({
+  ok: false,
+  message,
+  created: 0,
+  updated: 0,
+  skipped: 0,
+  warnings: [],
+});
+
+const uploadSchema = z.object({
+  /** Recorded on each row as `import_source`, so imported data stays findable. */
+  file_name: z.string().trim().min(1).max(240),
+  text: z.string().min(1).max(4_000_000, 'El fichero es demasiado grande.'),
+});
+
+/** PostgREST caps an unbounded select at 1,000 rows and says nothing about it. */
+const READ_PAGE = 1000;
+/** Rows per insert. Large enough to be one round trip for a normal address book. */
+const WRITE_CHUNK = 500;
+
+type Client = ReturnType<typeof createClient>;
+
+/** Every row of one table, in pages, because an unbounded select lies. */
+async function readAll<T>(client: Client, table: string, columns: string): Promise<T[]> {
+  const out: T[] = [];
+  for (let from = 0; ; from += READ_PAGE) {
+    const page = await client.from(table).select(columns).range(from, from + READ_PAGE - 1);
+    if (page.error) throw new Error(`${table}: ${page.error.message}`);
+    const got = (page.data ?? []) as unknown as T[];
+    out.push(...got);
+    if (got.length < READ_PAGE) return out;
+  }
+}
+
+interface ExistingPerson {
+  id: string;
+  full_name: string;
+  email: string | null;
+  phone: string | null;
+  org: string | null;
+  city: string | null;
+  notes: string | null;
+}
+
+/**
+ * The fields an import is allowed to touch on a person who already exists.
+ *
+ * `kind`, LinkedIn and the whole investor block are missing on purpose: those
+ * are judgements somebody typed, and no address book export knows better.
+ */
+const FILLABLE = ['email', 'phone', 'org', 'city', 'notes'] as const;
+
+export async function importContacts(input: unknown): Promise<ImportReport> {
+  const parsed = uploadSchema
+    .extend({ kind: z.enum(STAKEHOLDER_KINDS).default('Other') })
+    .safeParse(input);
+  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? 'Datos no válidos');
+
+  const { rows, warnings } = parseContactsCsv(parsed.data.text);
+  if (rows.length === 0) {
+    return { ...fail('No he encontrado ningún contacto en el fichero.'), warnings };
+  }
+
+  const supabase = createClient();
+  let existing: ExistingPerson[];
+  try {
+    existing = await readAll<ExistingPerson>(
+      supabase,
+      'arpa_stakeholders',
+      'id, full_name, email, phone, org, city, notes',
+    );
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : 'No he podido leer los contactos.');
+  }
+
+  // Email is the real key. Name is the fallback for the many real contacts that
+  // have no email at all: without it, every email-less person is duplicated on
+  // the second upload, which is worse than occasionally merging two people who
+  // genuinely share a name in a CRM this size.
+  const key = (email: string | null, name: string) =>
+    email ? `e:${email.toLowerCase()}` : `n:${name.trim().toLowerCase()}`;
+
+  const index = new Map<string, ExistingPerson>();
+  for (const p of existing) {
+    if (p.email) index.set(key(p.email, p.full_name), p);
+    // Keep the name key too, so a row with no email still finds a person who
+    // does have one.
+    const nameKey = key(null, p.full_name);
+    if (!index.has(nameKey)) index.set(nameKey, p);
+  }
+
+  const inserts: Record<string, unknown>[] = [];
+  const updates: { id: string; patch: Record<string, string> }[] = [];
+  let skipped = 0;
+  // Two rows of the same file can be the same person. Without this the second
+  // one trips the unique index and takes the whole chunk down with it.
+  const seen = new Set<string>();
+
+  for (const r of rows) {
+    const k = r.email ? key(r.email, r.full_name) : key(null, r.full_name);
+    if (seen.has(k)) {
+      skipped += 1;
+      continue;
+    }
+    seen.add(k);
+
+    const match = index.get(k) ?? (r.email ? undefined : index.get(key(null, r.full_name)));
+    if (!match) {
+      inserts.push({
+        full_name: r.full_name,
+        kind: parsed.data.kind,
+        email: r.email,
+        phone: r.phone,
+        org: r.org,
+        city: r.city,
+        notes: r.notes,
+        import_source: parsed.data.file_name,
+      });
+      continue;
+    }
+
+    // Fill the gaps, never overwrite. A month-old export must not be able to
+    // wipe a phone number somebody corrected by hand last week.
+    const patch: Record<string, string> = {};
+    for (const f of FILLABLE) {
+      if (match[f] === null && r[f] !== null) patch[f] = r[f] as string;
+    }
+    if (Object.keys(patch).length === 0) {
+      skipped += 1;
+      continue;
+    }
+    updates.push({ id: match.id, patch });
+  }
+
+  for (let i = 0; i < inserts.length; i += WRITE_CHUNK) {
+    const { error } = await supabase
+      .from('arpa_stakeholders')
+      .insert(inserts.slice(i, i + WRITE_CHUNK));
+    if (error) {
+      return {
+        ...fail(`Importación interrumpida: ${error.message}`),
+        created: i,
+        warnings,
+      };
+    }
+  }
+
+  for (const u of updates) {
+    const { error } = await supabase
+      .from('arpa_stakeholders')
+      .update({ ...u.patch, updated_at: new Date().toISOString() })
+      .eq('id', u.id);
+    // One failed patch is not worth abandoning the rest of the file over.
+    if (error) warnings.push(`No he podido completar un contacto: ${error.message}`);
+  }
+
+  revalidatePath('/crm');
+  return {
+    ok: true,
+    message:
+      `${inserts.length} contacto(s) nuevo(s), ${updates.length} completado(s), ` +
+      `${skipped} sin cambios.`,
+    created: inserts.length,
+    updated: updates.length,
+    skipped,
+    warnings,
+  };
+}
+
+/**
+ * Turn a calendar export into logged meetings.
+ *
+ * An event is only imported when at least one of its attendees is already a
+ * contact. That is the whole point: the value is "when did we last speak to this
+ * person", and an event nobody recognises is just a copy of a calendar we are
+ * not trying to replace. Events are skipped rather than used to invent people,
+ * because an ATTENDEE line carries a display name and nothing else, so importing
+ * them would fill the CRM with rows that can never be told apart from real ones.
+ */
+export async function importCalendar(input: unknown): Promise<ImportReport> {
+  const parsed = uploadSchema.safeParse(input);
+  if (!parsed.success) return fail(parsed.error.issues[0]?.message ?? 'Datos no válidos');
+
+  const { rows, warnings } = parseCalendarIcs(parsed.data.text);
+  if (rows.length === 0) {
+    return { ...fail('No he encontrado ningún evento en el fichero.'), warnings };
+  }
+
+  const supabase = createClient();
+  let people: { id: string; email: string | null }[];
+  let logged: { external_uid: string | null; stakeholder_id: string | null }[];
+  try {
+    [people, logged] = await Promise.all([
+      readAll<{ id: string; email: string | null }>(supabase, 'arpa_stakeholders', 'id, email'),
+      readAll<{ external_uid: string | null; stakeholder_id: string | null }>(
+        supabase,
+        'arpa_interactions',
+        'external_uid, stakeholder_id',
+      ),
+    ]);
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : 'No he podido leer la base.');
+  }
+
+  const byEmail = new Map<string, string>();
+  for (const p of people) if (p.email) byEmail.set(p.email.toLowerCase(), p.id);
+
+  if (byEmail.size === 0) {
+    return {
+      ...fail('Ningún contacto tiene email, así que no puedo cruzar el calendario.'),
+      warnings,
+    };
+  }
+
+  // The unique index on (external_uid, stakeholder_id) would catch a repeat, but
+  // as an error that aborts a whole chunk. Checking first makes a second upload
+  // a quiet no-op, which is what re-uploading the same calendar should feel like.
+  const already = new Set(
+    logged.filter((i) => i.external_uid).map((i) => `${i.external_uid}|${i.stakeholder_id}`),
+  );
+
+  const inserts: Record<string, unknown>[] = [];
+  let unknownPeople = 0;
+  let skipped = 0;
+
+  for (const ev of rows) {
+    const ids = [...new Set(ev.emails.map((e) => byEmail.get(e)).filter(Boolean) as string[])];
+    if (ids.length === 0) {
+      unknownPeople += 1;
+      continue;
+    }
+    // One row per recognised attendee, so the meeting shows up on each of their
+    // records and "last contact" is right for all of them.
+    for (const id of ids) {
+      if (already.has(`${ev.uid}|${id}`)) {
+        skipped += 1;
+        continue;
+      }
+      already.add(`${ev.uid}|${id}`);
+      inserts.push({
+        kind: 'Meeting',
+        stakeholder_id: id,
+        happened_at: ev.starts_at,
+        summary: ev.summary,
+        detail: ev.detail,
+        external_uid: ev.uid,
+        logged_by: parsed.data.file_name,
+      });
+    }
+  }
+
+  if (unknownPeople > 0) {
+    warnings.push(
+      `${unknownPeople} evento(s) sin ningún asistente conocido, no importados. Sube primero ` +
+        'los contactos y vuelve a subir el calendario.',
+    );
+  }
+
+  for (let i = 0; i < inserts.length; i += WRITE_CHUNK) {
+    const { error } = await supabase
+      .from('arpa_interactions')
+      .insert(inserts.slice(i, i + WRITE_CHUNK));
+    if (error) {
+      return { ...fail(`Importación interrumpida: ${error.message}`), created: i, warnings };
+    }
+  }
+
+  revalidatePath('/crm');
+  return {
+    ok: true,
+    message: `${inserts.length} reunión(es) registrada(s), ${skipped} ya estaban.`,
+    created: inserts.length,
+    updated: 0,
+    skipped,
+    warnings,
+  };
 }

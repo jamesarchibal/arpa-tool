@@ -1,14 +1,31 @@
 import Link from 'next/link';
 
-import { getOrigination, type OriginationRow } from '@/lib/arpa/db';
+import { getSourcing, type SourcingRow } from '@/lib/arpa/db';
 import { ExportButton } from './_export-button';
-import RowActions from './_row-actions';
+import ImportForm from './_import-form';
+import StageSelect from './pipeline/_stage-select';
 import TopNav from './_topnav';
 
 export const dynamic = 'force-dynamic';
 
-// The Tier 1 rule ids that borme-probe.mjs emits, in plain Spanish. Anything not
-// listed here still shows, with its raw id.
+/**
+ * Originación: the whole front of the funnel on one screen.
+ *
+ * The list is born from the SABI import, not from the BORME. That is the
+ * important part. A BORME act on its own is a company name, a province and a
+ * registry sheet, with no accounts, so it cannot be scored and cannot be
+ * ranked against ARPA's mandate. A SABI export has twenty years of figures.
+ * So SABI defines WHO is on the list, and the BORME is reduced to a SIGNAL
+ * hung onto the companies already there: "this one also filed an act that
+ * looks like preparing a sale".
+ *
+ * The match is on a normalised company name plus province, because the BORME
+ * does not publish a CIF. See arpa_name_key() in
+ * 20261013_arpa_sourcing_and_borme_match.sql.
+ */
+
+// The Tier 1 rule ids that borme-probe.mjs emits, in plain Spanish. Anything
+// not listed here still shows, with its raw id.
 const SIGNAL_LABELS: Record<string, string> = {
   holding_admin: 'administrador persona jurídica',
   escision_parcial: 'escisión parcial',
@@ -23,20 +40,20 @@ const SIGNAL_LABELS: Record<string, string> = {
   apoderado: 'nuevo apoderado',
 };
 
-// The three buckets the feed is read by. `early` is deliberately first: one
-// recent preparation act is the best moment to call, because no advisor has
-// been mandated yet. A loud cluster means the process is already advanced.
+// `early` is deliberately first: one recent preparation act is the best moment
+// to call, because no advisor has been mandated yet. A loud cluster means the
+// process is already advanced and contested.
 const PHASES = [
   {
     key: 'early',
     label: 'Primer movimiento',
-    hint: 'Una sola señal de preparación. La mejor ventana: todavía no hay asesor mandatado.',
+    hint: 'Una sola señal de preparación en el BORME. La mejor ventana: todavía no hay asesor mandatado.',
     tone: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   },
   {
     key: 'lead',
     label: 'Preparando',
-    hint: 'Dos o más señales de preparación. Ya se está moviendo, pero probablemente ya hay asesor.',
+    hint: 'Dos o más señales. Ya se está moviendo, pero probablemente ya hay asesor.',
     tone: 'border-amber-200 bg-amber-50 text-amber-700',
   },
   {
@@ -45,33 +62,33 @@ const PHASES = [
     hint: 'La operación ya pasó. No es un lead: lo útil es quién compró.',
     tone: 'border-zinc-300 bg-zinc-100 text-zinc-600',
   },
+  {
+    key: 'none',
+    label: 'Sin señal',
+    hint: 'Nada publicado en el BORME. No significa que no esté en venta, solo que no lo ha anunciado.',
+    tone: 'border-border bg-bg-elevated text-ink-mute',
+  },
 ] as const;
 
 const PHASE_BY_KEY = new Map(PHASES.map((p) => [p.key as string, p]));
 
-// Overridable, because we have no documented deep-link search for this SABI
-// seat. Point it at the real query URL when we have one, no code change.
-const SABI_URL = process.env.SABI_URL || 'https://sabi.bvdinfo.com/';
-
-const ROLE_LABELS: Record<string, string> = {
-  maker: 'fabrica',
-  trader: 'comercializa',
-  mixed: 'mixta',
-  unclear: 'sin determinar',
-};
+const m = (v: number | null) => (v === null || v === undefined ? '—' : `${Number(v).toFixed(2)} M€`);
 
 function Chip({
   href,
   active,
+  title,
   children,
 }: {
   href: string;
   active: boolean;
+  title?: string;
   children: React.ReactNode;
 }) {
   return (
     <Link
       href={href}
+      title={title}
       className={`rounded-md border px-3 py-1 text-xs transition ${
         active
           ? 'border-brand bg-brand-wash font-semibold text-brand'
@@ -83,11 +100,37 @@ function Chip({
   );
 }
 
-function SignalCell({ row }: { row: OriginationRow }) {
-  if (row.signal_count === 0) {
-    return <span className="text-[11px] text-ink-faint">sin señal</span>;
+function ScorePill({ value, label }: { value: number | null; label: string }) {
+  if (value === null || value === undefined) {
+    return (
+      <span className="inline-flex min-w-[46px] items-center justify-center rounded border border-border px-1.5 py-0.5 text-[11px] text-ink-faint">
+        {label} —
+      </span>
+    );
   }
-  const phase = PHASE_BY_KEY.get(row.phase);
+  const tone =
+    value >= 80
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+      : value >= 60
+        ? 'border-amber-200 bg-amber-50 text-amber-700'
+        : 'border-rose-200 bg-rose-50 text-rose-700';
+  return (
+    <span
+      className={`inline-flex min-w-[46px] items-center justify-center rounded border px-1.5 py-0.5 text-[11px] font-semibold tabular-nums ${tone}`}
+    >
+      {label} {value}
+    </span>
+  );
+}
+
+function SignalCell({ row }: { row: SourcingRow }) {
+  const phase = PHASE_BY_KEY.get(row.borme_phase ?? 'none');
+  const signals = row.borme_signals ?? [];
+
+  if (signals.length === 0) {
+    return <span className="text-[11px] text-ink-faint">sin señal en el BORME</span>;
+  }
+
   return (
     <div>
       <div className="flex flex-wrap items-center gap-1.5">
@@ -99,13 +142,22 @@ function SignalCell({ row }: { row: OriginationRow }) {
             {phase.label}
           </span>
         ) : null}
-        <span className="text-[11px] text-ink-mute tabular-nums">
-          {row.prep_count} prep{row.done_count > 0 ? ` · ${row.done_count} hecho` : ''}
+        <span className="text-[11px] tabular-nums text-ink-mute">
+          {row.borme_prep_count ?? 0} prep
+          {(row.borme_done_count ?? 0) > 0 ? ` · ${row.borme_done_count} hecho` : ''}
         </span>
       </div>
       <div className="mt-0.5 text-[11px] leading-snug text-ink-soft">
-        {row.signals.map((s) => SIGNAL_LABELS[s] ?? s).join(', ')}
+        {signals.map((s) => SIGNAL_LABELS[s] ?? s).join(', ')}
       </div>
+      {row.borme_first_signal_at ? (
+        <div className="mt-0.5 text-[10px] text-ink-faint">
+          primera {row.borme_first_signal_at.slice(0, 10)}
+          {row.borme_last_signal_at && row.borme_last_signal_at !== row.borme_first_signal_at
+            ? ` · última ${row.borme_last_signal_at.slice(0, 10)}`
+            : ''}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -123,27 +175,41 @@ function withFilter(
   return qs ? `/?${qs}` : '/';
 }
 
-export default async function OriginationPage({
+const TRIAGE = [
+  { key: 'untriaged', label: 'Sin revisar' },
+  { key: 'promoted', label: 'Ya en pipeline' },
+] as const;
+
+export default async function OriginacionPage({
   searchParams,
 }: {
-  searchParams: { province?: string; subsector?: string; status?: string; phase?: string };
+  searchParams: { region?: string; batch?: string; phase?: string; triaje?: string };
 }) {
   const current = {
-    province: searchParams.province,
-    subsector: searchParams.subsector,
-    status: searchParams.status,
+    region: searchParams.region,
+    batch: searchParams.batch,
     phase: searchParams.phase,
+    triaje: searchParams.triaje,
   };
 
-  const view = await getOrigination(current);
+  const triage =
+    current.triaje === 'untriaged' || current.triaje === 'promoted' ? current.triaje : undefined;
+
+  const view = await getSourcing({
+    region: current.region,
+    batch: current.batch,
+    phase: current.phase,
+    triage,
+  });
 
   const filtered = Object.values(current).some(Boolean);
+  const withSignal = view.total - view.phases.none;
 
   const stats: [string, string][] = [
-    ['Primer movimiento', String(view.phases.early)],
-    ['Preparando', String(view.phases.lead)],
-    ['Ya vendidas', String(view.phases.sold)],
-    ['En la lista', String(view.total)],
+    ['Importadas', String(view.total)],
+    ['Sin revisar', String(view.untriaged)],
+    ['Con señal BORME', String(withSignal)],
+    ['Ya en pipeline', String(view.total - view.untriaged)],
   ];
 
   return (
@@ -152,26 +218,37 @@ export default async function OriginationPage({
 
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-        <h1 className="text-2xl font-bold text-ink">🧭 ARPA · Originación</h1>
-        <p className="mt-1 max-w-3xl text-sm text-ink-mute">
-          Empresas sacadas del BORME, el boletín oficial del Registro Mercantil. Entra en la lista
-          una empresa que (1) declara una actividad de los 20 subsectores de ARPA y (2) la fabrica,
-          no solo la comercializa. Se ordena por <strong className="font-semibold text-ink-soft">lo
-          reciente que es su primera señal</strong>, no por cuántas tiene: cuando ya hay tres actos
-          agrupados el proceso está avanzado y casi seguro hay asesor. El BORME no publica CIF, así
-          que la clave es provincia más hoja registral.
-        </p>
+          <h1 className="text-2xl font-bold text-ink">🧭 ARPA · Originación</h1>
+          <p className="mt-1 max-w-3xl text-sm text-ink-mute">
+            Sube el export de SABI y cada empresa entra aquí ya puntuada con el blueprint. Encima de
+            eso se cruza el <strong className="font-semibold text-ink-soft">BORME</strong>, el
+            boletín del Registro Mercantil, para marcar quién ha publicado actos que parecen
+            preparar una venta. Decide en esta pantalla qué pasa al pipeline.
+          </p>
         </div>
-        <ExportButton
-          kind="originacion"
-          params={{
-            province: searchParams.province,
-            subsector: searchParams.subsector,
-            status: searchParams.status,
-            phase: searchParams.phase,
-          }}
-        />
+        <ExportButton kind="originacion" params={current} />
       </div>
+
+      <details
+        open={view.total === 0}
+        className="rounded-lg border border-border bg-bg-card px-5 py-4 [&_summary::-webkit-details-marker]:hidden"
+      >
+        <summary className="cursor-pointer text-sm font-semibold text-ink">
+          Importar de SABI
+          <span className="ml-2 font-normal text-ink-faint">
+            filtra en SABI, exporta a Excel, suéltalo aquí
+          </span>
+        </summary>
+        <div className="mt-4">
+          <ImportForm />
+        </div>
+        <p className="mt-3 text-[11px] leading-relaxed text-ink-faint">
+          El export de SABI es un dossier, una hoja por empresa, no una tabla. Se lee aquí mismo en
+          el navegador y se mandan solo los campos que hacen falta. Las cifras vienen en euros y el
+          modelo trabaja en millones: la conversión se hace en el servidor, y un importe que salga
+          absurdo para esta cartera se rechaza en vez de guardarse mal.
+        </p>
+      </details>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {stats.map(([label, value]) => (
@@ -184,7 +261,7 @@ export default async function OriginationPage({
 
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="w-24 text-[11px] uppercase tracking-wider text-ink-faint">Momento</span>
+          <span className="w-24 text-[11px] uppercase tracking-wider text-ink-faint">Señal</span>
           <Chip href={withFilter(current, { phase: null })} active={!current.phase}>
             Cualquiera
           </Chip>
@@ -193,6 +270,7 @@ export default async function OriginationPage({
               key={p.key}
               href={withFilter(current, { phase: current.phase === p.key ? null : p.key })}
               active={current.phase === p.key}
+              title={p.hint}
             >
               {p.label} ({view.phases[p.key]})
             </Chip>
@@ -201,45 +279,47 @@ export default async function OriginationPage({
 
         <div className="flex flex-wrap items-center gap-2">
           <span className="w-24 text-[11px] uppercase tracking-wider text-ink-faint">Triaje</span>
-          <Chip href={withFilter(current, { status: null })} active={!current.status}>
+          <Chip href={withFilter(current, { triaje: null })} active={!current.triaje}>
             Todas
           </Chip>
-          {['new', 'shortlisted', 'discarded', 'promoted'].map((s) => (
+          {TRIAGE.map((t) => (
             <Chip
-              key={s}
-              href={withFilter(current, { status: current.status === s ? null : s })}
-              active={current.status === s}
+              key={t.key}
+              href={withFilter(current, { triaje: current.triaje === t.key ? null : t.key })}
+              active={current.triaje === t.key}
             >
-              {{ new: 'Sin revisar', shortlisted: 'En lista', discarded: 'Descartadas', promoted: 'En pipeline' }[s]}
+              {t.label} ({t.key === 'untriaged' ? view.untriaged : view.total - view.untriaged})
             </Chip>
           ))}
         </div>
 
-        {view.subsectors.length > 0 ? (
+        {view.regions.length > 1 ? (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="w-24 text-[11px] uppercase tracking-wider text-ink-faint">Subsector</span>
-            {view.subsectors.map((s) => (
+            <span className="w-24 text-[11px] uppercase tracking-wider text-ink-faint">
+              Provincia
+            </span>
+            {view.regions.map((r) => (
               <Chip
-                key={s}
-                href={withFilter(current, { subsector: current.subsector === s ? null : s })}
-                active={current.subsector === s}
+                key={r}
+                href={withFilter(current, { region: current.region === r ? null : r })}
+                active={current.region === r}
               >
-                {s}
+                {r}
               </Chip>
             ))}
           </div>
         ) : null}
 
-        {view.provinces.length > 0 ? (
+        {view.batches.length > 1 ? (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="w-24 text-[11px] uppercase tracking-wider text-ink-faint">Provincia</span>
-            {view.provinces.map((p) => (
+            <span className="w-24 text-[11px] uppercase tracking-wider text-ink-faint">Lote</span>
+            {view.batches.map((b) => (
               <Chip
-                key={p}
-                href={withFilter(current, { province: current.province === p ? null : p })}
-                active={current.province === p}
+                key={b}
+                href={withFilter(current, { batch: current.batch === b ? null : b })}
+                active={current.batch === b}
               >
-                {p}
+                {b.replace(/^sabi:/, '')}
               </Chip>
             ))}
           </div>
@@ -250,13 +330,12 @@ export default async function OriginationPage({
         <div className="rounded-lg border border-dashed border-border bg-bg-card px-6 py-12 text-center">
           <p className="text-sm text-ink-soft">
             {view.total === 0 && !filtered
-              ? 'La lista está vacía.'
+              ? 'Todavía no hay nada importado.'
               : 'Ninguna empresa con esos filtros.'}
           </p>
           {view.total === 0 && !filtered ? (
             <p className="mx-auto mt-2 max-w-md text-xs text-ink-faint">
-              Se carga con <code className="text-ink-soft">scripts/borme-load.mjs</code>, que une la
-              pasada de sectores y la de señales del BORME.
+              Abre «Importar de SABI» arriba y sube el Excel del export.
             </p>
           ) : null}
         </div>
@@ -266,77 +345,76 @@ export default async function OriginationPage({
             <thead className="bg-bg-elevated text-left text-[11px] uppercase tracking-wider text-ink-mute">
               <tr>
                 <th className="px-4 py-2.5 font-medium">Empresa</th>
-                <th className="px-3 py-2.5 font-medium">Subsector</th>
-                <th className="px-3 py-2.5 font-medium">Actividad declarada</th>
-                <th className="px-3 py-2.5 font-medium">Momento y señales</th>
-                <th className="px-3 py-2.5 font-medium">Acción</th>
+                <th className="px-3 py-2.5 font-medium">Sector</th>
+                <th className="px-3 py-2.5 text-right font-medium">EBITDA ref.</th>
+                <th className="px-3 py-2.5 font-medium">Puertas</th>
+                <th className="px-3 py-2.5 font-medium">Señal BORME</th>
+                <th className="px-3 py-2.5 font-medium">Etapa</th>
               </tr>
             </thead>
             <tbody>
               {view.rows.map((r) => (
-                <tr key={r.id} className="border-t border-border align-top transition hover:bg-bg-elevated/60">
+                <tr
+                  key={r.id}
+                  className="border-t border-border align-top transition hover:bg-bg-elevated/60"
+                >
                   <td className="px-4 py-2.5">
-                    <div className="font-medium text-ink">{r.legal_name}</div>
+                    <Link href={`/${r.id}`} className="font-medium text-ink hover:text-brand">
+                      {r.legal_name}
+                    </Link>
                     <div className="text-[11px] text-ink-faint">
-                      {[r.province, r.hoja ? `hoja ${r.hoja}` : null, r.cnae ? `CNAE ${r.cnae}` : null]
+                      {[r.cif, r.city, r.region].filter(Boolean).join(' · ') || '—'}
+                    </div>
+                    <div className="text-[11px] text-ink-faint">
+                      {[
+                        r.cnae ? `CNAE ${r.cnae}` : null,
+                        r.employees !== null ? `${r.employees} empleados` : null,
+                        r.founded_year !== null ? `desde ${r.founded_year}` : null,
+                      ]
                         .filter(Boolean)
                         .join(' · ')}
                     </div>
-                    {r.patrimonial ? (
-                      <span className="mt-1 inline-block rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-600" title="El objeto social menciona tenencia de participaciones o inmuebles. Puede ser un vehículo patrimonial, no una operativa.">
-                        patrimonial
-                      </span>
-                    ) : null}
                   </td>
                   <td className="px-3 py-2.5 text-xs text-ink-soft">
                     {r.subsector ?? <span className="text-ink-faint">sin clasificar</span>}
                     {r.sector ? <div className="text-[11px] text-ink-faint">{r.sector}</div> : null}
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {r.role ? (
-                        <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-ink-mute">
-                          {ROLE_LABELS[r.role] ?? r.role}
-                        </span>
-                      ) : null}
-                      {r.principal ? (
-                        <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-ink-soft" title="La coincidencia está en la primera cláusula del objeto social, es decir es la actividad principal.">
-                          principal
-                        </span>
-                      ) : null}
-                    </div>
                   </td>
-                  <td className="max-w-[420px] px-3 py-2.5 text-[11px] leading-snug text-ink-mute">
-                    {r.objeto ? (
-                      <>
-                        {r.objeto.length > 260 ? `${r.objeto.slice(0, 260)}…` : r.objeto}
-                        {r.objeto_date ? (
-                          <div className="mt-0.5 text-ink-faint">publicado {r.objeto_date}</div>
-                        ) : null}
-                      </>
-                    ) : (
-                      <span className="text-ink-faint">sin objeto social publicado</span>
-                    )}
+                  <td className="px-3 py-2.5 text-right text-xs tabular-nums text-ink">
+                    {m(r.ebitda_ref)}
                   </td>
                   <td className="px-3 py-2.5">
-                    <SignalCell row={r} />
-                    {r.first_signal_at ? (
-                      <div className="mt-0.5 text-[10px] text-ink-faint">
-                        primera {r.first_signal_at}
-                        {r.last_signal_at && r.last_signal_at !== r.first_signal_at
-                          ? ` · última ${r.last_signal_at}`
-                          : ''}
+                    <div className="flex gap-1">
+                      <ScorePill value={r.qss} label="QSS" />
+                      <ScorePill value={r.om} label="OM" />
+                      <ScorePill value={r.pfr} label="PFR" />
+                    </div>
+                    {r.decision_status ? (
+                      <div className="mt-0.5 text-[11px] text-ink-mute">
+                        {r.decision_status}
+                        {r.has_veto ? (
+                          <span
+                            className="ml-1 font-bold text-rose-600"
+                            title="Hay un kill criterion marcado"
+                          >
+                            VETO
+                          </span>
+                        ) : null}
                       </div>
                     ) : null}
                   </td>
+                  <td className="max-w-[300px] px-3 py-2.5">
+                    <SignalCell row={r} />
+                    {r.borme_patrimonial ? (
+                      <span
+                        className="mt-1 inline-block rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-600"
+                        title="El objeto social publicado menciona tenencia de participaciones o inmuebles. Puede ser un vehículo patrimonial, no una operativa."
+                      >
+                        patrimonial
+                      </span>
+                    ) : null}
+                  </td>
                   <td className="px-3 py-2.5">
-                    <RowActions
-                      regKey={r.reg_key}
-                      status={r.status}
-                      projectId={r.project_id}
-                      legalName={r.legal_name}
-                      hoja={r.hoja}
-                      province={r.province}
-                      sabiUrl={SABI_URL}
-                    />
+                    <StageSelect id={r.id} stage={r.stage} />
                   </td>
                 </tr>
               ))}
@@ -346,10 +424,10 @@ export default async function OriginationPage({
       )}
 
       <p className="text-[11px] leading-relaxed text-ink-faint">
-        Se muestran como máximo 300 filas por vista, así que filtra por provincia o subsector para
-        ver el resto. Ninguna fila contiene el nombre de una persona física: el probe borra toda la
-        línea de cargos antes de guardar, y la señal más fuerte, un administrador que es una
-        sociedad, se refiere a una empresa.
+        Ordenado por QSS, lo mejor arriba, y lo que no se ha podido puntuar al final. Mover una
+        empresa de «Sourcing» a cualquier otra etapa es lo que la pasa al pipeline: es el mismo
+        proyecto, no una copia. El EBITDA de referencia es el normalizado si existe, y si no el
+        último depositado. Ninguna fila contiene el nombre de una persona física.
       </p>
     </div>
   );

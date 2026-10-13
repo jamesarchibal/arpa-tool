@@ -1,5 +1,5 @@
 import { csvResponse, stamp, toCsv } from '@/lib/arpa/csv';
-import { getOriginationAll, getPipeline, getStakeholders } from '@/lib/arpa/db';
+import { getPipeline, getSourcing, getStakeholders } from '@/lib/arpa/db';
 
 // Reads live data on every request, so it must not be cached or prerendered.
 export const dynamic = 'force-dynamic';
@@ -44,48 +44,69 @@ export async function GET(request: Request) {
   }
 
   if (kind === 'originacion') {
-    // The filters the user had applied on screen, so the file matches the view.
-    const rows = await getOriginationAll({
-      province: params.get('province') ?? undefined,
-      subsector: params.get('subsector') ?? undefined,
-      status: params.get('status') ?? undefined,
+    // The same reader the screen uses, with the same filters, so the file is
+    // exactly what the user was looking at. It pages internally, so there is no
+    // truncated-export trap here.
+    const triaje = params.get('triaje');
+    const { rows } = await getSourcing({
+      region: params.get('region') ?? undefined,
+      batch: params.get('batch') ?? undefined,
       phase: params.get('phase') ?? undefined,
+      triage: triaje === 'untriaged' || triaje === 'promoted' ? triaje : undefined,
     });
 
     const csv = toCsv(
       [
         'Empresa',
+        'NIF',
+        'Municipio',
         'Provincia',
-        'Hoja registral',
+        'CNAE',
+        'Empleados',
+        'Constitución',
         'Sector',
         'Subsector',
-        'CNAE',
-        'Fase',
+        'Etapa',
+        'Decisión',
+        'EBITDA ref (M€)',
+        'QSS',
+        'OM',
+        'PFR',
+        'Veto',
+        'Señal BORME',
         'Señales BORME',
         'Actos de preparación',
         'Actos de cierre',
         'Primera señal',
         'Última señal',
-        'Estado',
-        'Objeto social',
-        'Nota',
+        'Lote',
+        'Web',
       ],
       rows.map((r) => [
         r.legal_name,
-        r.province,
-        r.hoja,
+        r.cif,
+        r.city,
+        r.region,
+        r.cnae,
+        r.employees,
+        r.founded_year,
         r.sector,
         r.subsector,
-        r.cnae,
-        PHASE_LABEL[r.phase] ?? r.phase,
-        r.signals,
-        r.prep_count,
-        r.done_count,
-        day(r.first_signal_at),
-        day(r.last_signal_at),
-        r.status,
-        r.objeto,
-        r.note,
+        r.stage,
+        r.decision_status,
+        r.ebitda_ref,
+        r.qss,
+        r.om,
+        r.pfr,
+        r.has_veto === true,
+        PHASE_LABEL[r.borme_phase ?? 'none'] ?? r.borme_phase,
+        r.borme_signals ?? [],
+        r.borme_prep_count,
+        r.borme_done_count,
+        day(r.borme_first_signal_at),
+        day(r.borme_last_signal_at),
+        r.intake_batch,
+        r.website,
       ]),
     );
 

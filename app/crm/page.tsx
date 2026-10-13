@@ -7,6 +7,7 @@ import Agenda from './_agenda';
 import Links from './_links';
 import NewStakeholderForm from './_new-stakeholder';
 import PersonPanel from './_person-panel';
+import ContactUpload from './_upload';
 
 export const dynamic = 'force-dynamic';
 
@@ -86,6 +87,17 @@ export default async function CrmPage({
         </p>
       </div>
 
+      {/* Open when there is nothing here yet: on an empty CRM the upload IS the
+          first thing to do, and collapsing it hides the only way in. */}
+      <details open={view.total === 0}>
+        <summary className="cursor-pointer text-sm font-semibold text-brand hover:underline">
+          Importar contactos y calendario
+        </summary>
+        <div className="mt-3">
+          <ContactUpload />
+        </div>
+      </details>
+
       <Agenda items={agenda} people={everyone.map((p) => ({ id: p.id, full_name: p.full_name }))} />
 
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -112,7 +124,7 @@ export default async function CrmPage({
           {/* The route reads the type filter as `tipo`, because `kind` already
               names the export itself. */}
           <ExportButton kind="contactos" params={{ tipo: searchParams.kind, q: searchParams.q }} />
-          <NewStakeholderForm />
+          <NewStakeholderForm targets={targets} />
         </div>
       </div>
 

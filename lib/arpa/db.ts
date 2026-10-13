@@ -11,6 +11,10 @@ import {
   type TaxonomyRow,
 } from './scoring';
 
+/** PostgREST's own hard cap on an unbounded select. Our page size, so the loop
+ *  that works around it always asks for exactly as much as it can get. */
+const PAGE = 1000;
+
 export interface PipelineRow {
   id: string;
   code: string | null;
@@ -34,6 +38,119 @@ export interface PipelineRow {
   pfr: number | null;
   last_scored_at: string | null;
   has_veto: boolean | null;
+}
+
+/**
+ * A row of the Originación tab: an imported company, its latest scores, and
+ * whatever the BORME published about it. Backed by the `arpa_sourcing` view, so
+ * the score columns are defined in SQL in exactly one place.
+ */
+export interface SourcingRow extends PipelineRow {
+  cif: string | null;
+  city: string | null;
+  cnae: string | null;
+  employees: number | null;
+  founded_year: number | null;
+  website: string | null;
+  notes: string | null;
+  intake_batch: string | null;
+  enrich_source: string | null;
+  /** Null when the name key matched nothing in the BORME. */
+  borme_signals: string[] | null;
+  /** sold | lead | early | none */
+  borme_phase: string | null;
+  borme_prep_count: number | null;
+  borme_done_count: number | null;
+  borme_patrimonial: boolean | null;
+  borme_hoja: string | null;
+  borme_first_signal_at: string | null;
+  borme_last_signal_at: string | null;
+}
+
+export interface SourcingFilters {
+  /**
+   * `untriaged` is still sitting in Sourcing, `promoted` has been moved on.
+   * Expressed as triage and not as a stage name because the question this
+   * screen answers is "what have I not looked at yet", and that is one choice
+   * rather than one of eleven stages.
+   */
+  triage?: 'untriaged' | 'promoted';
+  region?: string;
+  batch?: string;
+  /** lead | early | sold | none */
+  phase?: string;
+}
+
+export interface SourcingView {
+  rows: SourcingRow[];
+  regions: string[];
+  batches: string[];
+  total: number;
+  /** Companies still sitting in Sourcing, i.e. not yet triaged. */
+  untriaged: number;
+  /** Row counts per BORME phase over the whole import, not just the filtered page. */
+  phases: { lead: number; early: number; sold: number; none: number };
+}
+
+/**
+ * Reads Originación.
+ *
+ * Filtering happens in JS rather than in the query because the row count here
+ * is the size of one SABI export, hundreds not millions, and the facet counts
+ * on screen have to be computed over the UNFILTERED set anyway. One read is
+ * cheaper than one read per facet.
+ */
+export async function getSourcing(filters: SourcingFilters = {}): Promise<SourcingView> {
+  const supabase = createClient();
+
+  // PostgREST caps an unbounded select at 1,000 rows and says nothing about it,
+  // so an import of 1,200 companies would silently lose 200 of them and the
+  // facet counts would be wrong too. Page explicitly.
+  const all: SourcingRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const page = await supabase
+      .from('arpa_sourcing')
+      .select('*')
+      .order('updated_at', { ascending: false })
+      .range(from, from + PAGE - 1);
+    if (page.error) throw new Error(`arpa_sourcing: ${page.error.message}`);
+    const got = (page.data ?? []) as SourcingRow[];
+    all.push(...got);
+    if (got.length < PAGE) break;
+  }
+
+  const triaged = (r: SourcingRow) => r.stage !== 'Sourcing';
+
+  const rows = all.filter(
+    (r) =>
+      (!filters.triage || triaged(r) === (filters.triage === 'promoted')) &&
+      (!filters.region || r.region === filters.region) &&
+      (!filters.batch || r.intake_batch === filters.batch) &&
+      (!filters.phase || (r.borme_phase ?? 'none') === filters.phase),
+  );
+
+  // Highest conviction first, missing scores last: an import drops hundreds of
+  // rows in at once and the order they came out of SABI means nothing.
+  rows.sort((a, b) => {
+    if (a.qss === null && b.qss === null) return a.legal_name.localeCompare(b.legal_name, 'es');
+    if (a.qss === null) return 1;
+    if (b.qss === null) return -1;
+    return Number(b.qss) - Number(a.qss);
+  });
+
+  const uniq = (xs: (string | null)[]) =>
+    [...new Set(xs.filter((x): x is string => !!x))].sort((a, b) => a.localeCompare(b, 'es'));
+
+  const phase = (p: string) => all.filter((r) => (r.borme_phase ?? 'none') === p).length;
+
+  return {
+    rows,
+    regions: uniq(all.map((r) => r.region)),
+    batches: uniq(all.map((r) => r.intake_batch)),
+    total: all.length,
+    untriaged: all.filter((r) => r.stage === 'Sourcing').length,
+    phases: { lead: phase('lead'), early: phase('early'), sold: phase('sold'), none: phase('none') },
+  };
 }
 
 export interface CompanyRecord {
@@ -186,152 +303,6 @@ export async function getTaxonomyOptions() {
 
   if (error) throw new Error(`arpa_taxonomy: ${error.message}`);
   return (data ?? []) as { id: number; sector: string; category: string; subsector: string }[];
-}
-
-export interface OriginationRow {
-  id: number;
-  reg_key: string;
-  legal_name: string;
-  province: string;
-  hoja: string | null;
-  sector: string | null;
-  subsector: string | null;
-  objeto: string | null;
-  objeto_date: string | null;
-  cnae: string | null;
-  role: string | null;
-  principal: boolean;
-  patrimonial: boolean;
-  signals: string[];
-  signal_count: number;
-  signal_score: number;
-  prep_count: number;
-  done_count: number;
-  /** sold | lead | early | none. Generated in the database from the two counts. */
-  phase: string;
-  first_signal_at: string | null;
-  last_signal_at: string | null;
-  status: string;
-  project_id: string | null;
-  note: string | null;
-}
-
-export interface OriginationFilters {
-  province?: string;
-  subsector?: string;
-  status?: string;
-  /** lead | early | sold. Omitted shows every phase. */
-  phase?: string;
-}
-
-export interface OriginationView {
-  rows: OriginationRow[];
-  total: number;
-  provinces: string[];
-  subsectors: string[];
-  /** Row counts per phase over the whole table, not just the page. */
-  phases: { lead: number; early: number; sold: number; none: number };
-}
-
-const ORIGINATION_PAGE = 300;
-const FACET_PAGE = 1000;
-
-/**
- * The origination feed, loaded by scripts/borme-load.mjs out of BORME.
- *
- * Ranked by RECENCY of the first preparation act, not by how many signals
- * fired. The publication lag is 7 days median, so a company whose first act
- * appeared last week has probably not mandated an advisor yet. By the time
- * three acts have clustered the process is well advanced and contested, so a
- * loud row is a WORSE lead than a quiet recent one.
- *
- * The facet lists come from a separate thin select rather than from `rows`,
- * because `rows` is capped and the filter chips must still show every option.
- */
-export async function getOrigination(filters: OriginationFilters = {}): Promise<OriginationView> {
-  const supabase = createClient();
-
-  let q = supabase
-    .from('arpa_origination')
-    .select('*', { count: 'exact' })
-    .order('first_signal_at', { ascending: false, nullsFirst: false })
-    .order('prep_count', { ascending: false })
-    .order('legal_name')
-    .limit(ORIGINATION_PAGE);
-
-  if (filters.province) q = q.eq('province', filters.province);
-  if (filters.subsector) q = q.eq('subsector', filters.subsector);
-  if (filters.status) q = q.eq('status', filters.status);
-  if (filters.phase) q = q.eq('phase', filters.phase);
-
-  // PostgREST caps an unbounded select at 1,000 rows, so the single facet read
-  // only saw a fifth of the table and the province list came out different on
-  // every request. Page through it. The three columns are small, and this also
-  // gives the "con señal" count without a separate `head: true` request, which
-  // returned 0 in production because the count only travels in the
-  // `Content-Range` response header and nothing guarantees it survives a HEAD
-  // through the proxy.
-  const facetRows: { province: string; subsector: string | null; phase: string }[] = [];
-  for (let from = 0; ; from += FACET_PAGE) {
-    const page = await supabase
-      .from('arpa_origination')
-      .select('province, subsector, phase')
-      .range(from, from + FACET_PAGE - 1);
-    if (page.error) throw new Error(`arpa_origination facets: ${page.error.message}`);
-    const rows = (page.data ?? []) as typeof facetRows;
-    facetRows.push(...rows);
-    if (rows.length < FACET_PAGE) break;
-  }
-
-  const list = await q;
-  if (list.error) throw new Error(`arpa_origination: ${list.error.message}`);
-
-  const count = (p: string) => facetRows.filter((r) => r.phase === p).length;
-
-  return {
-    rows: (list.data ?? []) as OriginationRow[],
-    total: list.count ?? 0,
-    provinces: [...new Set(facetRows.map((r) => r.province))].sort(),
-    subsectors: [...new Set(facetRows.map((r) => r.subsector).filter((s): s is string => Boolean(s)))].sort(),
-    phases: { lead: count('lead'), early: count('early'), sold: count('sold'), none: count('none') },
-  };
-}
-
-/**
- * Every matching origination row, for the CSV export.
- *
- * `getOrigination` caps at ORIGINATION_PAGE because the screen only shows a
- * page, and PostgREST caps an unbounded select at 1,000 anyway, so an export
- * that reused either would silently hand over a truncated file. Same ordering
- * as the screen so the file matches what the user was looking at.
- */
-export async function getOriginationAll(filters: OriginationFilters = {}): Promise<OriginationRow[]> {
-  const supabase = createClient();
-  const rows: OriginationRow[] = [];
-
-  for (let from = 0; ; from += FACET_PAGE) {
-    let q = supabase
-      .from('arpa_origination')
-      .select('*')
-      .order('first_signal_at', { ascending: false, nullsFirst: false })
-      .order('prep_count', { ascending: false })
-      .order('legal_name')
-      .range(from, from + FACET_PAGE - 1);
-
-    if (filters.province) q = q.eq('province', filters.province);
-    if (filters.subsector) q = q.eq('subsector', filters.subsector);
-    if (filters.status) q = q.eq('status', filters.status);
-    if (filters.phase) q = q.eq('phase', filters.phase);
-
-    const page = await q;
-    if (page.error) throw new Error(`arpa_origination export: ${page.error.message}`);
-
-    const got = (page.data ?? []) as OriginationRow[];
-    rows.push(...got);
-    if (got.length < FACET_PAGE) break;
-  }
-
-  return rows;
 }
 
 export async function getProjectDetail(id: string): Promise<ProjectDetail | null> {
@@ -705,19 +676,31 @@ export async function getAgenda(): Promise<AgendaItem[]> {
     }));
 }
 
-/** Companies and their project, for the "link to" picker on the CRM page. */
-export async function getLinkTargets(): Promise<{ company_id: string; project_id: string | null; legal_name: string }[]> {
+/**
+ * Companies and their project, for the "link to" picker on the CRM page.
+ *
+ * `stage` comes along so the picker can put the companies already in the
+ * pipeline above the ones that were only just imported. After a SABI upload the
+ * list is hundreds of names long and the handful being worked on are the ones
+ * anybody is adding a contact to.
+ */
+export async function getLinkTargets(): Promise<
+  { company_id: string; project_id: string | null; legal_name: string; stage: string | null }[]
+> {
   const supabase = createClient();
   const { data, error } = await supabase
     .from('arpa_companies')
-    .select('id, legal_name, arpa_projects(id)')
+    .select('id, legal_name, arpa_projects(id, stage)')
     .order('legal_name');
 
   if (error) throw new Error(`arpa_companies targets: ${error.message}`);
 
-  return ((data ?? []) as unknown as { id: string; legal_name: string; arpa_projects: { id: string }[] }[]).map((c) => ({
+  type Row = { id: string; legal_name: string; arpa_projects: { id: string; stage: string }[] };
+
+  return ((data ?? []) as unknown as Row[]).map((c) => ({
     company_id: c.id,
     project_id: c.arpa_projects[0]?.id ?? null,
     legal_name: c.legal_name,
+    stage: c.arpa_projects[0]?.stage ?? null,
   }));
 }

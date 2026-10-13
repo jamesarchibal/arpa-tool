@@ -3,17 +3,13 @@
  *
  * This is the entry point Marc described on the 2026-10-08 call. His SABI seat
  * exports the whole filtered result set to Excel with no download cap, so the
- * origination loop is: filter in SABI -> export -> drop the file into Claude ->
- * Claude posts the rows here -> every row becomes a scored opportunity sitting
- * in a stage he can move.
+ * origination loop is: filter in SABI -> export -> drop the file on the
+ * Originación screen -> every row becomes a scored opportunity sitting in a
+ * stage he can move.
  *
- * Deliberately NOT an .xlsx parser. SABI's export carries merged cells, `n.d.`
- * placeholders, a variable column set (whatever he ticked) and one column per
- * year, so a parser here would be a permanent guessing game against a UI that
- * has not changed since 2003. An LLM reads that file correctly today, and it is
- * HIS Claude subscription doing it, which is the point: no API tokens on our
- * side. So the contract is clean JSON and the messy part stays where it is
- * already solved.
+ * The file itself is read by `lib/arpa/sabi-xls.ts`, in the browser. This file
+ * only ever sees already-structured rows, and revalidates all of them: it is
+ * the trust boundary, so a wrong client parse cannot write a corrupt figure.
  *
  * ── Units ──
  * The single most dangerous thing in this file. SABI prints EUROS. Every money

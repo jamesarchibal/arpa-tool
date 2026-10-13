@@ -5,6 +5,7 @@ import { useState, useTransition } from 'react';
 
 import { createStakeholder } from '../actions';
 import { STAKEHOLDER_KINDS } from '@/lib/arpa/lists';
+import type { LinkTarget } from './_links';
 
 const field = 'w-full rounded border border-border bg-bg px-2.5 py-1.5 text-sm text-ink outline-none focus:border-brand';
 const label = 'mb-1 block text-[11px] uppercase tracking-wider text-ink-mute';
@@ -12,20 +13,36 @@ const label = 'mb-1 block text-[11px] uppercase tracking-wider text-ink-mute';
 /** The kinds for whom the investor block is worth asking about. */
 const INVESTOR_KINDS = new Set(['Investor', 'LP', 'Co-investor', 'Lender']);
 
-export default function NewStakeholderForm() {
+/**
+ * Same rule as the Originación screen: a company still at Sourcing has only been
+ * imported, anything past it is being worked on. Those are the few whose owner
+ * somebody is actually writing down, so they go at the top of the list.
+ */
+const inPipeline = (t: LinkTarget) => t.project_id !== null && t.stage !== 'Sourcing';
+
+export default function NewStakeholderForm({ targets }: { targets: LinkTarget[] }) {
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState('Owner');
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
 
+  const pipeline = targets.filter(inPipeline);
+  const rest = targets.filter((t) => !inPipeline(t));
+
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     const raw = Object.fromEntries(new FormData(e.currentTarget).entries());
+    const target = targets.find((t) => t.company_id === String(raw.company_id ?? ''));
 
     startTransition(async () => {
       const res = await createStakeholder({
+        // Link to the project too when the company has one, so the person shows
+        // up on the deal page and not only on the company.
+        company_id: target?.company_id ?? null,
+        project_id: target?.project_id ?? null,
+        role: raw.role ? String(raw.role) : null,
         full_name: String(raw.full_name ?? '').trim(),
         kind: String(raw.kind || 'Other'),
         org: raw.org ? String(raw.org) : null,
@@ -98,6 +115,33 @@ export default function NewStakeholderForm() {
           <div>
             <label className={label} htmlFor="city">Ciudad</label>
             <input id="city" name="city" className={field} placeholder="Barcelona" />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-[2fr_1fr] gap-3">
+          <div>
+            <label className={label} htmlFor="company_id">Empresa</label>
+            <select id="company_id" name="company_id" defaultValue="" className={field}>
+              <option value="">Sin vincular</option>
+              {pipeline.length > 0 ? (
+                <optgroup label="En pipeline">
+                  {pipeline.map((t) => (
+                    <option key={t.company_id} value={t.company_id}>{t.legal_name}</option>
+                  ))}
+                </optgroup>
+              ) : null}
+              {rest.length > 0 ? (
+                <optgroup label="Importadas">
+                  {rest.map((t) => (
+                    <option key={t.company_id} value={t.company_id}>{t.legal_name}</option>
+                  ))}
+                </optgroup>
+              ) : null}
+            </select>
+          </div>
+          <div>
+            <label className={label} htmlFor="role">Rol en la operación</label>
+            <input id="role" name="role" className={field} placeholder="Socio mayoritario" />
           </div>
         </div>
 

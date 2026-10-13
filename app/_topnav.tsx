@@ -1,19 +1,25 @@
 import Link from 'next/link';
 
-// Originación leads, because finding the companies is the step before judging
-// them, and it is the part ARPA asked for first.
+/**
+ * Three tabs, in the order the work actually happens.
+ *
+ * There were five. Importar folded into Originación because they were one step
+ * read twice: the import IS where the list comes from, so a separate tab made
+ * you upload on one screen and look at the result on another. Scoring folded in
+ * too, because every imported company is scored on the way in and the scores
+ * are already on the Originación and Pipeline rows. A standalone calculator was
+ * a fourth place where a number could disagree with the other three.
+ */
 const TABS = [
-  { href: '/importar', label: 'Importar', key: 'importar' },
   { href: '/', label: 'Originación', key: 'origination' },
   { href: '/pipeline', label: 'Pipeline', key: 'pipeline' },
-  { href: '/calculadora', label: 'Scoring', key: 'scoring' },
   { href: '/crm', label: 'Contactos', key: 'crm' },
 ] as const;
 
 export default function TopNav({
   active,
 }: {
-  active: 'importar' | 'origination' | 'pipeline' | 'scoring' | 'crm';
+  active: 'origination' | 'pipeline' | 'crm';
 }) {
   return (
     <header className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-border pb-4">
@@ -32,14 +38,9 @@ export default function TopNav({
           </Link>
         ))}
       </nav>
-      {/* Absolute, and a plain anchor: /arpa sits outside this app's basePath, so
-          next/link would resolve it to /arpa/app/arpa. */}
-      <a
-        href="https://www.joblanders.ai/arpa"
-        className="font-mono text-xs uppercase tracking-[0.12em] text-ink-faint transition hover:text-ink"
-      >
-        ← joblanders.ai/arpa
-      </a>
+      <span className="font-mono text-xs uppercase tracking-[0.12em] text-ink-faint">
+        ARPA Partners
+      </span>
     </header>
   );
 }

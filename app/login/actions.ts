@@ -30,7 +30,7 @@ export async function login(formData: FormData): Promise<void> {
   const safe = next.startsWith('/') && !next.startsWith('//') ? next : '/';
 
   // The path must NOT carry the basePath. redirect() from a server action is
-  // resolved by the client router, which adds `/arpa/app` itself; writing it
-  // here produced /arpa/app/arpa/app/origination and a 404 on every deep link.
+  // resolved by the client router, which adds `/arpa` itself; writing it
+  // here produced /arpa/arpa/origination and a 404 on every deep link.
   redirect(safe);
 }

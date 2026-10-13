@@ -3,7 +3,7 @@
 // A plain <a> is deliberate here. next/link would try to client-navigate to the
 // route handler rather than download its body, and unlike next/link a bare href
 // does not get the basePath prepended, so it has to be written out.
-const BASE_PATH = '/arpa/app';
+const BASE_PATH = '/arpa';
 
 export type ExportKind = 'originacion' | 'pipeline' | 'contactos';
 
