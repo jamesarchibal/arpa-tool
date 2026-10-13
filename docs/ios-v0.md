@@ -109,7 +109,11 @@ This is the phase ARPA will actually look at. Phases 1-3 exist to make it honest
 
 They are not leaving Excel, so the demo has to meet it.
 
-- Download the Excel per company and per project.
+- Download the Excel per company and per project. **Done for the project**:
+  `/export/proyecto?id=` writes a six-sheet `.xlsx` (ficha, finanzas, scoring,
+  personas, interacciones, documentos) from `lib/arpa/project-xlsx.ts`. Figures
+  go in as numbers, not as formatted text, and every derived one comes from the
+  same `derive()` the screen uses, so the file cannot disagree with the app.
 - A folder per project that syncs with SharePoint.
 - Outlook into interactions.
 

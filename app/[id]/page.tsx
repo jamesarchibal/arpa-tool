@@ -144,6 +144,17 @@ export default async function ArpaProjectPage({
                 {company.website.replace(/^https?:\/\//, '')}
               </a>
             ) : null}
+            {/* The same route the popup's button uses. A plain <a>, and the
+                basePath written out, because next/link would client-navigate
+                to the route handler instead of downloading its body. */}
+            <a
+              href={`/arpa/export/proyecto?id=${params.id}`}
+              download
+              className="mt-1.5 inline-block rounded-md border border-border px-2.5 py-1 text-[11px] text-ink-mute transition hover:bg-bg-elevated hover:text-ink"
+              title="Un .xlsx con seis hojas: ficha, finanzas, scoring, personas, interacciones y documentos"
+            >
+              ⬇ Excel del proyecto
+            </a>
           </div>
         </div>
       </div>

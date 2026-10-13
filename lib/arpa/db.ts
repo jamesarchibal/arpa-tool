@@ -194,6 +194,11 @@ export interface ProjectRecord {
   pass_reason: PassReason | null;
   source: string | null;
   owner: string | null;
+  /** The temática. Null until somebody says which play this deal is. */
+  theme_id: number | null;
+  /** The project's own industry. Declared here rather than inherited from the
+   *  primary company, because a buy-and-build can span two subsectors. */
+  taxonomy_id: number | null;
   revenue_y1: number | null;
   revenue_y2: number | null;
   revenue_y3: number | null;

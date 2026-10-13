@@ -1,16 +1,18 @@
 import Link from 'next/link';
 
-import { getProjects, getThemes, type PipelineRow } from '@/lib/arpa/db';
+import { getProjectDetail, getProjects, getThemes, type PipelineRow } from '@/lib/arpa/db';
 import { FUNNEL_LANES } from '@/lib/arpa/lists';
 import TopNav from '../_topnav';
 import StageSelect from '../pipeline/_stage-select';
+import Ficha from './_ficha';
 import FocusSelect from './_focus';
+import Modal from './_modal';
 
 export const dynamic = 'force-dynamic';
 
 const m = (v: number | null) => (v === null || v === undefined ? null : `${Number(v).toFixed(1)} M€`);
 
-type Params = { v?: string; theme?: string; industry?: string; stage?: string };
+type Params = { v?: string; theme?: string; industry?: string; stage?: string; ficha?: string };
 
 /** The current query with one key replaced, so a filter never drops the others. */
 function href(params: Params, patch: Partial<Params>) {
@@ -40,15 +42,26 @@ function Chip({ to, active, children }: { to: string; active: boolean; children:
 function Card({
   row,
   themes,
+  params,
 }: {
   row: PipelineRow;
   themes: { id: number; name: string }[];
+  params: Params;
 }) {
   const ebitda = m(row.ebitda_ref);
   return (
     <article className="space-y-1.5 rounded-lg border border-border bg-bg-card p-2.5 shadow-sm transition hover:border-brand/40">
       <div className="flex items-start justify-between gap-2">
-        <Link href={`/${row.id}`} className="text-sm font-semibold leading-tight text-ink hover:text-brand">
+        {/* Opens the popup, not the full page. A card is read far more often
+            than it is edited, and the question it has to answer ("what is this
+            and what are its numbers") does not justify leaving the board. The
+            popup itself links on to the full ficha. */}
+        <Link
+          href={href(params, { ficha: row.id })}
+          scroll={false}
+          className="text-sm font-semibold leading-tight text-ink hover:text-brand"
+          title="Ver toda la información sin salir del tablero"
+        >
           {row.legal_name}
         </Link>
         {row.has_veto ? (
@@ -100,7 +113,14 @@ function Card({
 }
 
 export default async function ProyectosPage({ searchParams }: { searchParams: Params }) {
-  const [view, allThemes] = await Promise.all([getProjects(searchParams), getThemes()]);
+  const [view, allThemes, detail] = await Promise.all([
+    getProjects(searchParams),
+    getThemes(),
+    // The open popup is a search param, so it is read on the server with the
+    // board in the same pass. An id that no longer exists just renders no
+    // popup, which is the right outcome for a stale shared link.
+    searchParams.ficha ? getProjectDetail(searchParams.ficha) : null,
+  ]);
   const board = searchParams.v !== 'tarjetas';
   const pickable = allThemes.filter((t) => t.active).map((t) => ({ id: t.id, name: t.name }));
   const filtered = Boolean(searchParams.theme || searchParams.industry || searchParams.stage);
@@ -223,7 +243,9 @@ export default async function ProyectosPage({ searchParams }: { searchParams: Pa
                   <span className="text-[11px] tabular-nums text-ink-faint">{cards.length}</span>
                 </header>
                 <div className="space-y-2">
-                  {cards.map((r) => <Card key={r.id} row={r} themes={pickable} />)}
+                  {cards.map((r) => (
+                    <Card key={r.id} row={r} themes={pickable} params={searchParams} />
+                  ))}
                   {cards.length === 0 ? (
                     <p className="px-1 py-3 text-center text-[11px] text-ink-faint">vacío</p>
                   ) : null}
@@ -234,7 +256,9 @@ export default async function ProyectosPage({ searchParams }: { searchParams: Pa
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {view.rows.map((r) => <Card key={r.id} row={r} themes={pickable} />)}
+          {view.rows.map((r) => (
+            <Card key={r.id} row={r} themes={pickable} params={searchParams} />
+          ))}
         </div>
       )}
 
@@ -242,6 +266,12 @@ export default async function ProyectosPage({ searchParams }: { searchParams: Pa
         <Link href="/proyectos" className="inline-block text-xs text-ink-faint hover:text-brand">
           limpiar filtros
         </Link>
+      ) : null}
+
+      {detail ? (
+        <Modal closeTo={href(searchParams, { ficha: undefined })}>
+          <Ficha detail={detail} themes={pickable} />
+        </Modal>
       ) : null}
     </div>
   );
