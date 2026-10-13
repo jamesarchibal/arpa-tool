@@ -40,6 +40,37 @@ export const STAGES = [
 
 export type Stage = (typeof STAGES)[number];
 
+/**
+ * The board's columns.
+ *
+ * Ignasi's funnel is a handful of approval gates, not eleven stages: companies
+ * identified, screening (15 minutes, one page out), opportunity memo (3-4
+ * pages), financial assessment, investment case, then closing. Eleven columns
+ * on a board is unreadable and most of them would always be empty, so the
+ * stages group into the gates.
+ *
+ * Every stage in STAGES must appear in exactly one lane, or a project
+ * disappears from the board. `lib/arpa/lists.test.ts` asserts that.
+ */
+export const FUNNEL_LANES = [
+  { key: 'identified', label: 'Identificadas', stages: ['Sourcing'] },
+  { key: 'screening', label: 'Screening', stages: ['Screening'] },
+  { key: 'memo', label: 'Memo oportunidad', stages: ['Assessment'] },
+  { key: 'finance', label: 'Finanzas', stages: ['Preliminary Financial Review'] },
+  {
+    key: 'hot',
+    label: 'Caliente',
+    stages: [
+      'Investment Case',
+      'LOI & Exclusivity',
+      'Full Due Diligence',
+      'Final Investment Approval',
+      'Closing',
+    ],
+  },
+  { key: 'closed', label: 'Cerradas', stages: ['Portfolio', 'Closed'] },
+] as const satisfies readonly { key: string; label: string; stages: readonly Stage[] }[];
+
 /** arpa_stakeholders.kind */
 export const STAKEHOLDER_KINDS = [
   'Owner',

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { STAGES } from './lists';
 import {
   TAXONOMY,
   toScoringInput,
@@ -38,6 +39,14 @@ export interface PipelineRow {
   pfr: number | null;
   last_scored_at: string | null;
   has_veto: boolean | null;
+  /** The temática. Null until somebody says which play this deal is. */
+  theme_id: number | null;
+  theme_name: string | null;
+  /** The project's own industry, falling back to the primary company's. */
+  taxonomy_id: number | null;
+  industry_pre_score: number | null;
+  /** How many companies hang off the project. One for a plain deal. */
+  company_count: number;
 }
 
 /**
@@ -290,6 +299,144 @@ export async function getPipeline(): Promise<PipelineRow[]> {
 
   if (error) throw new Error(`arpa_pipeline: ${error.message}`);
   return (data ?? []) as PipelineRow[];
+}
+
+/** A temática: one of the two or three plays ARPA runs. */
+export interface ThemeRow {
+  id: number;
+  name: string;
+  slug: string;
+  thesis: string | null;
+  fit_criteria: string | null;
+  active: boolean;
+  sort: number;
+  is_example: boolean;
+  /** Projects currently running this play. */
+  project_count: number;
+}
+
+/** A taxonomy row with everything ARPA reasons about a subsector. */
+export interface IndustryRow {
+  id: number;
+  sector: string;
+  category: string;
+  subsector: string;
+  growth: string | null;
+  fragmentation: string | null;
+  consolidation: string | null;
+  pre_score: number | null;
+  margin_typical_pct: number | null;
+  cnae_codes: string[] | null;
+  keywords: string[] | null;
+  notes: string | null;
+  active: boolean;
+  is_example: boolean;
+}
+
+export async function getThemes(): Promise<ThemeRow[]> {
+  const supabase = createClient();
+  const [themes, projects] = await Promise.all([
+    supabase
+      .from('arpa_themes')
+      .select('id, name, slug, thesis, fit_criteria, active, sort, is_example')
+      .order('sort')
+      .order('name'),
+    supabase.from('arpa_projects').select('theme_id').not('theme_id', 'is', null),
+  ]);
+
+  if (themes.error) throw new Error(`arpa_themes: ${themes.error.message}`);
+  if (projects.error) throw new Error(`arpa_projects themes: ${projects.error.message}`);
+
+  const counts = new Map<number, number>();
+  for (const p of (projects.data ?? []) as { theme_id: number }[]) {
+    counts.set(p.theme_id, (counts.get(p.theme_id) ?? 0) + 1);
+  }
+
+  return ((themes.data ?? []) as Omit<ThemeRow, 'project_count'>[]).map((t) => ({
+    ...t,
+    project_count: counts.get(t.id) ?? 0,
+  }));
+}
+
+export async function getIndustries(): Promise<IndustryRow[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('arpa_taxonomy')
+    .select(
+      'id, sector, category, subsector, growth, fragmentation, consolidation, pre_score, margin_typical_pct, cnae_codes, keywords, notes, active, is_example',
+    )
+    .order('sector')
+    .order('category')
+    .order('subsector');
+
+  if (error) throw new Error(`arpa_taxonomy: ${error.message}`);
+  return (data ?? []) as IndustryRow[];
+}
+
+export interface ProjectsView {
+  rows: PipelineRow[];
+  themes: { id: number; name: string; count: number }[];
+  /** Subsectors that actually have a project on them, with their counts. */
+  industries: { id: number; subsector: string; count: number }[];
+  stages: { stage: string; count: number }[];
+  total: number;
+  /** Projects with no temática assigned. The gap worth seeing on screen. */
+  unthemed: number;
+}
+
+/**
+ * Reads Proyectos: the same rows as Pipeline, faceted by temática, industria and
+ * etapa instead of listed in one table.
+ *
+ * Faceted in JS for the same reason as Originación: the counts have to be over
+ * the unfiltered set, so one read is cheaper than one read per facet, and a
+ * pipeline is hundreds of rows, not millions.
+ */
+export async function getProjects(
+  filters: { theme?: string; industry?: string; stage?: string } = {},
+): Promise<ProjectsView> {
+  const all = await getPipeline();
+  const industryNames = new Map<number, string>();
+  for (const i of await getTaxonomyOptions()) industryNames.set(i.id, i.subsector);
+
+  const themeId = filters.theme ? Number(filters.theme) : null;
+  const industryId = filters.industry ? Number(filters.industry) : null;
+
+  const rows = all.filter(
+    (r) =>
+      (themeId === null || r.theme_id === themeId) &&
+      (industryId === null || r.taxonomy_id === industryId) &&
+      (!filters.stage || r.stage === filters.stage),
+  );
+
+  const tally = <K>(pick: (r: PipelineRow) => K | null) => {
+    const out = new Map<K, number>();
+    for (const r of all) {
+      const k = pick(r);
+      if (k !== null) out.set(k, (out.get(k) ?? 0) + 1);
+    }
+    return out;
+  };
+
+  const byTheme = tally((r) => r.theme_id);
+  const byIndustry = tally((r) => r.taxonomy_id);
+  const byStage = tally((r) => r.stage);
+  const themeNames = new Map<number, string>();
+  for (const r of all) if (r.theme_id !== null && r.theme_name) themeNames.set(r.theme_id, r.theme_name);
+
+  return {
+    rows,
+    themes: [...byTheme.entries()]
+      .map(([id, count]) => ({ id, name: themeNames.get(id) ?? `#${id}`, count }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'es')),
+    industries: [...byIndustry.entries()]
+      .map(([id, count]) => ({ id, subsector: industryNames.get(id) ?? `#${id}`, count }))
+      .sort((a, b) => a.subsector.localeCompare(b.subsector, 'es')),
+    // Funnel order, not alphabetical: a stage list sorted by name is unreadable.
+    stages: STAGES.filter((s) => byStage.has(s)).map((s) => ({ stage: s, count: byStage.get(s) ?? 0 })),
+    total: all.length,
+    unthemed: all.filter((r) => r.theme_id === null).length,
+  };
 }
 
 export async function getTaxonomyOptions() {

@@ -1007,3 +1007,192 @@ export async function importCalendar(input: unknown): Promise<ImportReport> {
     warnings,
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The two master lists: temáticas and the industry taxonomy.
+//
+// Both are reference data that ARPA owns and that almost never changes, so they
+// live behind Ajustes rather than in the daily screens. Everything written here
+// lands with is_example false, which is what separates ARPA's own content from
+// the demo rows a migration seeded.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A slug from a name: lowercase, accents folded, spaces to hyphens. */
+function slugify(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 80);
+}
+
+const themeSchema = z.object({
+  id: z.coerce.number().int().positive().nullable().optional(),
+  name: z.string().trim().min(2).max(120),
+  thesis: text(2000),
+  fit_criteria: text(2000),
+  active: z.coerce.boolean().default(true),
+  sort: z.coerce.number().int().min(0).max(999).default(0),
+});
+
+export async function saveTheme(input: unknown): Promise<ActionResult> {
+  const parsed = themeSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: 'Datos no válidos' };
+
+  const { id, name, ...rest } = parsed.data;
+  const supabase = createClient();
+
+  // Editing never rewrites the slug. It is the stable handle, and a renamed
+  // temática is the same play with a better name.
+  const { error } = id
+    ? await supabase.from('arpa_themes').update({ name, ...rest, updated_at: new Date().toISOString() }).eq('id', id)
+    : await supabase.from('arpa_themes').insert({ name, slug: slugify(name), is_example: false, ...rest });
+
+  if (error) return { ok: false, message: error.message };
+  revalidatePath('/ajustes');
+  revalidatePath('/proyectos');
+  return { ok: true, message: id ? 'Temática guardada' : 'Temática creada' };
+}
+
+export async function deleteTheme(input: unknown): Promise<ActionResult> {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(input);
+  if (!parsed.success) return { ok: false, message: 'Datos no válidos' };
+
+  const supabase = createClient();
+  // The foreign key is ON DELETE SET NULL, so the projects survive and simply
+  // lose their temática. Say how many, or the deletion looks free.
+  const { count } = await supabase
+    .from('arpa_projects')
+    .select('id', { count: 'exact', head: true })
+    .eq('theme_id', parsed.data.id);
+
+  const { error } = await supabase.from('arpa_themes').delete().eq('id', parsed.data.id);
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath('/ajustes');
+  revalidatePath('/proyectos');
+  return {
+    ok: true,
+    message: count ? `Temática borrada. ${count} proyecto(s) se quedan sin temática.` : 'Temática borrada',
+  };
+}
+
+/** A comma or newline separated input to a clean array, or null when empty. */
+const list = z
+  .union([z.string(), z.array(z.string())])
+  .nullable()
+  .optional()
+  .transform((v) => {
+    if (v === null || v === undefined) return null;
+    const parts = (Array.isArray(v) ? v : v.split(/[,\n]/)).map((s) => s.trim()).filter(Boolean);
+    return parts.length ? parts.slice(0, 40) : null;
+  });
+
+const industrySchema = z.object({
+  id: z.coerce.number().int().positive().nullable().optional(),
+  sector: z.string().trim().min(2).max(120),
+  category: z.string().trim().min(2).max(120),
+  subsector: z.string().trim().min(2).max(160),
+  growth: z.enum(['H', 'M', 'L']).nullable().optional(),
+  fragmentation: z.enum(['H', 'M', 'L']).nullable().optional(),
+  consolidation: z.enum(['H', 'M', 'L']).nullable().optional(),
+  pre_score: z.coerce.number().int().min(0).max(100).nullable().optional(),
+  margin_typical_pct: money,
+  cnae_codes: list,
+  keywords: list,
+  notes: text(2000),
+  active: z.coerce.boolean().default(true),
+});
+
+export async function saveIndustry(input: unknown): Promise<ActionResult> {
+  const parsed = industrySchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos no válidos' };
+
+  const { id, ...fields } = parsed.data;
+  const supabase = createClient();
+
+  // Saving a seeded row makes it ARPA's: the example flag is what the screens
+  // use to say "this number is not yours yet", and once it is edited, it is.
+  const { error } = id
+    ? await supabase.from('arpa_taxonomy').update({ ...fields, is_example: false }).eq('id', id)
+    : await supabase.from('arpa_taxonomy').insert({ ...fields, is_example: false });
+
+  if (error) return { ok: false, message: error.message };
+  revalidatePath('/ajustes');
+  revalidatePath('/proyectos');
+  revalidatePath('/pipeline');
+  return { ok: true, message: id ? 'Subsector guardado' : 'Subsector creado' };
+}
+
+/**
+ * Removes every row a seed migration wrote.
+ *
+ * Deliberately one button and not a per-row delete: the point of the flag is
+ * that the demo content leaves in one action, so nobody has to remember which
+ * of thirty rows was invented.
+ */
+export async function clearExamples(): Promise<ActionResult> {
+  const supabase = createClient();
+
+  // A seeded subsector a project already points at is NOT deleted. Deleting it
+  // would null that project's industry, which is a worse outcome than leaving
+  // one labelled row behind, so it is reported instead.
+  const [{ data: used }, { data: seeded }] = await Promise.all([
+    supabase.from('arpa_projects').select('taxonomy_id').not('taxonomy_id', 'is', null),
+    supabase.from('arpa_taxonomy').select('id').eq('is_example', true),
+  ]);
+
+  const inUse = new Set((used ?? []).map((r) => r.taxonomy_id as number));
+  const removable = ((seeded ?? []) as { id: number }[]).map((r) => r.id).filter((id) => !inUse.has(id));
+  const kept = ((seeded ?? []).length) - removable.length;
+
+  const tErr = (await supabase.from('arpa_themes').delete().eq('is_example', true)).error;
+  if (tErr) return { ok: false, message: tErr.message };
+
+  if (removable.length > 0) {
+    const iErr = (await supabase.from('arpa_taxonomy').delete().in('id', removable)).error;
+    if (iErr) return { ok: false, message: iErr.message };
+  }
+
+  revalidatePath('/ajustes');
+  revalidatePath('/proyectos');
+  revalidatePath('/pipeline');
+  return {
+    ok: true,
+    message: kept
+      ? `Ejemplos borrados. ${kept} subsector(es) se quedan porque hay proyectos usándolos.`
+      : 'Ejemplos borrados.',
+  };
+}
+
+/**
+ * Says which play a deal is and in which subsector.
+ *
+ * Company + temática + industria is Ignasi's definition of a project, and this
+ * is the action that completes the other two thirds.
+ */
+export async function setProjectFocus(input: unknown): Promise<ActionResult> {
+  const parsed = z
+    .object({
+      project_id: uuid,
+      theme_id: z.coerce.number().int().positive().nullable().optional(),
+      taxonomy_id: z.coerce.number().int().positive().nullable().optional(),
+    })
+    .safeParse(input);
+  if (!parsed.success) return { ok: false, message: 'Datos no válidos' };
+
+  const { project_id, theme_id, taxonomy_id } = parsed.data;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from('arpa_projects')
+    .update({ theme_id: theme_id ?? null, taxonomy_id: taxonomy_id ?? null })
+    .eq('id', project_id);
+
+  if (error) return { ok: false, message: error.message };
+  revalidatePath('/proyectos');
+  revalidatePath('/pipeline');
+  revalidatePath(`/${project_id}`);
+  return { ok: true, message: 'Enfoque guardado' };
+}
