@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { getCamino, getInbound, getIndustries, getThemes } from '@/lib/arpa/db';
 import CaminoPicker from './_camino-picker';
 import CaminoStart from './_camino-start';
+import { Gates } from './_gates';
 import InboundForm from './_inbound-form';
 import SabiList, { type SabiParams } from './_sabi-list';
 import TopNav from './_topnav';
@@ -234,13 +235,14 @@ export default async function OriginacionPage({
                   </div>
                 ) : (
                   <div className="overflow-x-auto rounded-lg border border-border">
-                    <table className="w-full min-w-[820px] text-sm">
+                    <table className="w-full min-w-[1040px] text-sm">
                       <thead className="bg-bg-elevated text-left text-[11px] uppercase tracking-wider text-ink-mute">
                         <tr>
                           <th className="px-4 py-2.5 font-medium">Empresa</th>
                           <th className="px-3 py-2.5 font-medium">Propiedad</th>
                           <th className="px-3 py-2.5 text-right font-medium">Ventas</th>
                           <th className="px-3 py-2.5 text-right font-medium">EBITDA</th>
+                          <th className="px-3 py-2.5 font-medium">Puertas</th>
                           <th className="px-3 py-2.5 font-medium">Estado</th>
                         </tr>
                       </thead>
@@ -284,6 +286,21 @@ export default async function OriginacionPage({
                             </td>
                             <td className="px-3 py-2.5 text-right text-xs tabular-nums text-ink">
                               {m(c.ebitda)}
+                            </td>
+                            {/* The score belongs on this screen and not only in
+                                the ficha: the camino's whole job is to rank a
+                                subsector, and a ranking with the judgement
+                                hidden one click away is just a list. A company
+                                with no project cannot have one, which is the
+                                honest answer rather than a zero. */}
+                            <td className="px-3 py-2.5">
+                              {c.project_id ? (
+                                <Gates qss={c.qss} om={c.om} pfr={c.pfr} veto={c.has_veto} />
+                              ) : (
+                                <span className="text-[11px] text-ink-faint">
+                                  sin proyecto, nada que puntuar
+                                </span>
+                              )}
                             </td>
                             <td className="px-3 py-2.5">
                               {c.project_id ? (

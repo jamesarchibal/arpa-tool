@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import { getProjectDetail, getProjects, getThemes, type PipelineRow } from '@/lib/arpa/db';
 import { FUNNEL_LANES } from '@/lib/arpa/lists';
+import { Gates } from '../_gates';
 import TopNav from '../_topnav';
 import StageSelect from '../pipeline/_stage-select';
 import Ficha from './_ficha';
@@ -95,16 +96,12 @@ function Card({
           the stage, so changing it here moves the card. */}
       <StageSelect id={row.id} stage={row.stage} />
 
+      {/* The three gates, coloured, and not QSS alone: a deal that passed
+          screening at 100 and then scored 40 on the memo is not a good deal,
+          and a card showing only the 100 says the opposite. The VETO already
+          rides in the title line, so it is not repeated here. */}
       <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
-        {row.qss !== null ? (
-          <span className="rounded border border-border bg-bg-elevated px-1.5 py-0.5 font-semibold tabular-nums text-ink-soft">
-            QSS {row.qss}
-          </span>
-        ) : (
-          <span className="rounded border border-dashed border-border px-1.5 py-0.5 text-ink-faint">
-            sin puntuar
-          </span>
-        )}
+        <Gates qss={row.qss} om={row.om} pfr={row.pfr} compact />
         {ebitda ? <span className="tabular-nums text-ink-faint">EBITDA {ebitda}</span> : null}
         {row.owner ? <span className="text-ink-faint">· {row.owner}</span> : null}
       </div>

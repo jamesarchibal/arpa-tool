@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import { getSourcing, type SourcingRow } from '@/lib/arpa/db';
 import { ExportButton } from './_export-button';
+import { ScorePill } from './_gates';
 import ImportForm from './_import-form';
 import StageSelect from './pipeline/_stage-select';
 
@@ -106,29 +107,6 @@ function Chip({
     >
       {children}
     </Link>
-  );
-}
-
-function ScorePill({ value, label }: { value: number | null; label: string }) {
-  if (value === null || value === undefined) {
-    return (
-      <span className="inline-flex min-w-[46px] items-center justify-center rounded border border-border px-1.5 py-0.5 text-[11px] text-ink-faint">
-        {label} —
-      </span>
-    );
-  }
-  const tone =
-    value >= 80
-      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-      : value >= 60
-        ? 'border-amber-200 bg-amber-50 text-amber-700'
-        : 'border-rose-200 bg-rose-50 text-rose-700';
-  return (
-    <span
-      className={`inline-flex min-w-[46px] items-center justify-center rounded border px-1.5 py-0.5 text-[11px] font-semibold tabular-nums ${tone}`}
-    >
-      {label} {value}
-    </span>
   );
 }
 

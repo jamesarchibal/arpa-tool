@@ -408,6 +408,11 @@ export interface CaminoCompany {
   /** M€, like every other money field here. Last deposited year. */
   revenue: number | null;
   ebitda: number | null;
+  /** The three gates, 0-100. Null where that gate has not been scored. */
+  qss: number | null;
+  om: number | null;
+  pfr: number | null;
+  has_veto: boolean | null;
 }
 
 export interface CaminoView {
@@ -448,11 +453,15 @@ export async function getCamino(taxonomyId: number): Promise<CaminoView> {
 
   const companies = (companyRows ?? []) as Omit<
     CaminoCompany,
-    'project_id' | 'project_code' | 'stage' | 'revenue' | 'ebitda'
+    'project_id' | 'project_code' | 'stage' | 'revenue' | 'ebitda' | 'qss' | 'om' | 'pfr' | 'has_veto'
   >[];
 
   if (companies.length === 0) {
-    return { companies: [], untouched: 0, comparables: { n: 0, revenue: null, ebitda: null, margin: null } };
+    return {
+      companies: [],
+      untouched: 0,
+      comparables: { n: 0, revenue: null, ebitda: null, margin: null },
+    };
   }
 
   const { data: projectRows, error: pErr } = await supabase
@@ -478,10 +487,28 @@ export async function getCamino(taxonomyId: number): Promise<CaminoView> {
   const byCompany = new Map<string, Row>();
   for (const r of rows) if (!byCompany.has(r.company_id)) byCompany.set(r.company_id, r);
 
+  // The gates come from `arpa_pipeline` and not from `arpa_scores`, because the
+  // view already defines "the latest score per gate" in SQL. Recomputing that
+  // here is how two screens end up quoting different numbers for one deal.
+  type Gates = { id: string; qss: number | null; om: number | null; pfr: number | null; has_veto: boolean | null };
+  const gates = new Map<string, Gates>();
+  if (rows.length > 0) {
+    const { data: gateRows, error: gErr } = await supabase
+      .from('arpa_pipeline')
+      .select('id, qss, om, pfr, has_veto')
+      .in(
+        'id',
+        rows.map((r) => r.id),
+      );
+    if (gErr) throw new Error(`arpa_pipeline camino: ${gErr.message}`);
+    for (const g of (gateRows ?? []) as Gates[]) gates.set(g.id, g);
+  }
+
   const n = (v: number | null) => (v === null || v === undefined ? null : Number(v));
 
   const merged: CaminoCompany[] = companies.map((c) => {
     const p = byCompany.get(c.id);
+    const g = p ? gates.get(p.id) : undefined;
     return {
       ...c,
       project_id: p?.id ?? null,
@@ -489,6 +516,10 @@ export async function getCamino(taxonomyId: number): Promise<CaminoView> {
       stage: p?.stage ?? null,
       revenue: p ? n(p.revenue_y3) : null,
       ebitda: p ? n(p.ebitda_norm ?? p.ebitda_y3) : null,
+      qss: g?.qss ?? null,
+      om: g?.om ?? null,
+      pfr: g?.pfr ?? null,
+      has_veto: g?.has_veto ?? null,
     };
   });
 
