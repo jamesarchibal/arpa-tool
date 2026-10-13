@@ -6,13 +6,14 @@ const TABS = [
   { href: '/importar', label: 'Importar', key: 'importar' },
   { href: '/', label: 'Originación', key: 'origination' },
   { href: '/pipeline', label: 'Pipeline', key: 'pipeline' },
+  { href: '/calculadora', label: 'Scoring', key: 'scoring' },
   { href: '/crm', label: 'Contactos', key: 'crm' },
 ] as const;
 
 export default function TopNav({
   active,
 }: {
-  active: 'importar' | 'origination' | 'pipeline' | 'crm';
+  active: 'importar' | 'origination' | 'pipeline' | 'scoring' | 'crm';
 }) {
   return (
     <header className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-border pb-4">

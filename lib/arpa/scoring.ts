@@ -53,7 +53,10 @@ export type ModelId = 'qss' | 'om' | 'pfr';
 // lives in `lists.ts`, because the stage <select> in the pipeline is a client
 // component and importing it from here would pull this whole engine into the
 // browser bundle.
-export { STAGES, type Stage } from './lists';
+// The `.ts` extension is load-bearing: `node --test lib/arpa/scoring.test.ts`
+// resolves this specifier as plain Node ESM, which does not do extensionless
+// lookups. tsconfig has `allowImportingTsExtensions` so tsc accepts it too.
+export { STAGES, type Stage } from './lists.ts';
 
 export interface TaxonomyRow {
   sector: string;
