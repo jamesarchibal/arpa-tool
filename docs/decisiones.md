@@ -1,0 +1,115 @@
+# Decision ledger
+
+Every explicit instruction James gave on this project, in the order he gave it,
+with what state it is in now. Written because the instructions arrived across
+many sessions and several of them silently replaced an earlier one.
+
+Status words: **hecho**, **parcial**, **pendiente**, **sustituido** (a later
+instruction overrode it), **permanente** (a standing rule, never "finished").
+
+## Open now, in build order
+
+These are the live actions. Everything below this section is history.
+
+| # | Action | Comes from | State |
+| --- | --- | --- | --- |
+| A1 | A flagged demo dataset: several companies, projects spread across the funnel lanes, with financials, people, interactions and documents. All `is_example`, all clearable in one click. | "ni abre los cards de empresa con la info aunqeu sea de demo fake" | **hecho**. `20261014_arpa_demo_seed.sql`: 10 companies, 8 projects, 10 people, 13 interactions, 9 documents. Scores come from `scripts/seed-demo-scores.ts`, which runs ARPA's own engine over those figures, because a score typed by hand is a number nobody computed. |
+| A2 | Change a project's stage from the board card itself. | "ni se cambian las tarjetas de estado" | **hecho**. The board card reuses the pipeline's `StageSelect`, and the lane is derived from the stage, so changing it moves the card. |
+| A3 | Make a deal's people visibly the same people as Contactos, in both directions. | "ni veo los stakeholders de la empresa guardarse tambien en la otra pestaña" | **hecho**. The wiring already existed in both directions. What was missing was rows, and a link: the name on a deal's Personas tab now opens that person in Contactos. |
+| A4 | Rebuild Originación to Ignasi's dual model: an opportunistic path (an advisor sends an infomemo) and a proactive path that starts from a temática plus a subsector, analyses the industry and comparables, and only then names companies. | "la pestaña originacion no tiene que ver con lo que decia el" | **hecho**. Two doors on `/`. The proactive one is a URL (`?tema=&sub=`), so a camino is shareable. The SABI plus BORME list is still there, but underneath the proactive path, because it is a tool of that path and not the path itself. |
+| A5 | Gates: `arpa_stage_decisions` (project, stage, decision, who, when, why), stage derived from decisions, plus the one-pager and the 3-4 pager deliverables. | Phase 3 of `ios-v0.md` | **pendiente**. Ignasi's funnel is gates, not stages. |
+| A6 | Project detail UI for `arpa_project_companies`, so a buy-and-build over three companies can be shown. | "podries tenir un deal que sigui de tres companyies" | **pendiente**. The table exists since the 2026-10-13 migration, and the demo has a three-company deal in it (ARPA-26-006). Only the board's "+ 2 empresa(s) más" line reads it. |
+
+Blocked, and stays blocked: the real temáticas and the real pre-scores are
+ARPA's content. Ignasi agreed to send his slides and Excel. We do not invent
+them. Inventing plausible content has already cost one round of rework here.
+
+## Standing rules
+
+| Rule | Instruction |
+| --- | --- |
+| "despliega" means live on joblanders.ai | "subejo en joblanders.ai siempre que digo despliega ya me refiero a eso" |
+| Keep replies short | "can you reply much shorter my man?" |
+| No Airtable, no Microsoft dependency | decision 2 of five: "LETS BUILD SOMETHING THAT DONT DEPEDN ON AIRTABLE OR MICROSFOT" |
+| Scores are 0-100, not 1-5 | decision 4 of five: "THE SECOND" |
+| No SABI API. Manual now, API-shaped later | decision 1 of five: "NO ACESS TO API JUT NOW" |
+| Marc scores, timing decided together | decision 3 of five |
+| Stakeholders is a light CRM | decision 5 of five: "WHATEVER IS BEST FOR WHAT HE WANTS" |
+| Orchestrated by ARPA through their own Claude account, not our API tokens | "este sistema idealmente estaria orquestrado por ellos a través de su cuenta de claude no de api y consumo de tokens" |
+
+That last one is **pendiente** and nothing in the app addresses it yet. It
+matters more than it looks: it decides whether the agents of Phase 6 run on our
+key or inside their Claude seat.
+
+## The ledger
+
+### Hosting and shape of the deliverable
+
+| Instruction | State |
+| --- | --- |
+| Put it at `joblanders.ai/arpa`, password `arpapartners` | hecho |
+| Copy the password page from the other pages | hecho |
+| Remove the first tab, then the second, leave only the calculator | sustituido |
+| The tool is the whole deliverable, not a landing page. Replace `/arpa` with the app | hecho |
+
+### Scoring
+
+| Instruction | State |
+| --- | --- |
+| Build their scoring model interactively: upload a P&L, their own variable criteria, and it says whether the company is good | hecho |
+| Use their real Kill Criteria as vetoes, their controlled lists verbatim, their valuation model, their field names | hecho |
+| The scoring engine is the calculator built from their variables. Reuse it, do not rewrite it | hecho |
+| Scoring stops being the headline | hecho |
+| The scoring tab disappears, because scoring now happens inside Originación | hecho |
+
+### Origination, three generations of it
+
+| Instruction | State |
+| --- | --- |
+| Gen 1. Origination feed from BORME is the ask. Order: origination, pipeline, stakeholder CRM, scoring | sustituido |
+| Document the signals, and split them pre-transaction versus post-transaction | hecho |
+| Gen 2. Everything starts from THEIR SABI export. Import, order, score, choose what goes to Pipeline | hecho |
+| SABI pulls the BORME signals of the selected companies. Unattached BORME rows are not needed | hecho |
+| Merge Importación and Originación into one tab | hecho |
+| Remove the prompt and the JSON paste flow | hecho |
+| A button that looks up a company in SABI and populates its card. Manual now, shaped for the API later | parcial |
+| Gen 3. Dual origination: opportunistic infomemo, and proactive from subsector to comparables to named companies | hecho |
+
+Three generations in three weeks is not churn. Gen 1 came from Marc's emails,
+Gen 2 from the call with Marc, Gen 3 from Ignasi's architecture. Each one came
+from a different person with more authority over the answer.
+
+### Pipeline and CRM
+
+| Instruction | State |
+| --- | --- |
+| Open opportunities in a CRM with states you can move | hecho |
+| A page with stakeholders plus a general agenda, with info per person | hecho |
+| Add contacts of the companies selected in Pipeline | hecho |
+| Upload contacts from email and calendar. CSV and ICS files, not an OAuth connector | hecho |
+| Internet scraping beyond SABI | pendiente, explicitly later |
+
+### The three partner-level gaps
+
+Raised as my own closing bullets, and James said "si" to resolving them.
+
+| Gap | State |
+| --- | --- |
+| Eloi's only explicit requirement: export the whole database to Excel | hecho, CSV export |
+| Ignasi's Quick Snapshot template | hecho |
+| Ignasi's Opportunity Memo template | pendiente, folds into A5 |
+| Ignasi's standard projections Excel | pendiente, folds into A5 |
+| Their plan B is real: Airtable plus a freelance. Compete only where it cannot reach | permanente |
+
+### IOS v0.0.0, from the 2026-10-13 meeting
+
+The current version. Full plan in `ios-v0.md`.
+
+| Instruction | State |
+| --- | --- |
+| Build a demo of Ignasi's architecture so ARPA can choose custom, Airtable or hybrid | en curso |
+| Assume they keep working in Excel | permanente |
+| Portfolio management is out of scope for this version | permanente |
+| A separate Proyectos tab, not a kanban folded into Pipeline | hecho |
+| Demo data must be seeded but flagged as an example, and clearable | hecho as a mechanism, **A1 is the missing content** |
+| The two master lists get their own Ajustes tab | hecho |

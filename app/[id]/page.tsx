@@ -268,7 +268,16 @@ export default async function ArpaProjectPage({
                   <li key={s.link_id} className="rounded border border-border bg-bg px-3 py-2">
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="text-sm text-ink">
-                        {s.full_name}
+                        {/* The hint above claims these people live in Contactos.
+                            The name links there so that claim is checkable in
+                            one click instead of taken on trust. */}
+                        <Link
+                          href={`/crm?q=${encodeURIComponent(s.full_name)}`}
+                          className="hover:text-brand hover:underline"
+                          title="Ver la ficha en Contactos"
+                        >
+                          {s.full_name}
+                        </Link>
                         {s.is_primary ? (
                           <span className="ml-2 text-[10px] font-bold text-brand">PRINCIPAL</span>
                         ) : null}

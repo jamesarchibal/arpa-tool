@@ -315,6 +315,190 @@ export async function createLead(input: unknown): Promise<ActionResult & { proje
   return { ok: true, message: 'Lead creado', projectId: project.id };
 }
 
+/**
+ * The proactive door: open a deal on a company a camino surfaced.
+ *
+ * The temática and the subsector come from the camino that found it, not from a
+ * second form. That is the whole claim of the proactive path: the play and the
+ * industry were chosen BEFORE the company, so the project inherits them.
+ */
+export async function startFromCamino(input: unknown): Promise<ActionResult & { projectId?: string }> {
+  const parsed = z
+    .object({
+      company_id: uuid,
+      theme_id: z.coerce.number().int(),
+      taxonomy_id: z.coerce.number().int(),
+      owner: z.string().max(120).nullable().optional(),
+    })
+    .safeParse(input);
+  if (!parsed.success) return { ok: false, message: 'Datos no válidos' };
+
+  const supabase = createClient();
+
+  // One deal per company from this screen. Opening a second one by accident is
+  // how the same target ends up scored twice with two different numbers.
+  const { data: existing, error: eErr } = await supabase
+    .from('arpa_projects')
+    .select('id')
+    .eq('company_id', parsed.data.company_id)
+    .limit(1);
+
+  if (eErr) return { ok: false, message: eErr.message };
+  if (existing && existing.length > 0) {
+    return { ok: false, message: 'Esta empresa ya tiene un proyecto abierto', projectId: existing[0].id };
+  }
+
+  const { data, error } = await supabase
+    .from('arpa_projects')
+    .insert({
+      company_id: parsed.data.company_id,
+      stage: 'Sourcing',
+      source: 'Camino temático',
+      theme_id: parsed.data.theme_id,
+      taxonomy_id: parsed.data.taxonomy_id,
+      owner: parsed.data.owner ?? null,
+    })
+    .select('id')
+    .single();
+
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath('/');
+  revalidatePath('/proyectos');
+  revalidatePath('/pipeline');
+  return { ok: true, message: 'Proyecto abierto', projectId: data.id };
+}
+
+/**
+ * The opportunistic door: an advisor sends an infomemo.
+ *
+ * One form writes five rows, because that is what actually happened: a company
+ * exists, a deal is open on it, somebody sent it, a document arrived, and there
+ * is a date on which it did. Splitting that over five screens is how the sender
+ * ends up unrecorded, and the sender is the asset.
+ *
+ * The steps are sequential and each failure says which one broke, so a half
+ * written deal is visible instead of looking like a total failure that invites
+ * a retry and a duplicate.
+ */
+export async function createInboundDeal(input: unknown): Promise<ActionResult & { projectId?: string }> {
+  const parsed = z
+    .object({
+      legal_name: z.string().trim().min(2).max(240),
+      cif: text(20),
+      region: text(120),
+      taxonomy_id: z.coerce.number().int().nullable().optional(),
+      theme_id: z.coerce.number().int().nullable().optional(),
+      sender_name: z.string().trim().min(2).max(200),
+      sender_org: text(200),
+      sender_email: z.union([z.string().trim().email().max(200), z.literal('')]).nullable().optional()
+        .transform((v) => (v ? v : null)),
+      sender_kind: z.enum(STAKEHOLDER_KINDS).default('Intermediary'),
+      doc_title: z.string().trim().min(2).max(300),
+      received_on: z.string().trim().max(40).nullable().optional(),
+      note: text(1000),
+      owner: text(120),
+    })
+    .safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos no válidos' };
+  }
+
+  const d = parsed.data;
+  const supabase = createClient();
+
+  const { data: company, error: cErr } = await supabase
+    .from('arpa_companies')
+    .insert({
+      legal_name: d.legal_name,
+      cif: d.cif ? d.cif.toUpperCase() : null,
+      country: 'ES',
+      region: d.region,
+      taxonomy_id: d.taxonomy_id ?? null,
+    })
+    .select('id')
+    .single();
+
+  if (cErr) {
+    const hint = cErr.code === '23505' ? ' (ese CIF ya existe, abre la empresa y añade el documento allí)' : '';
+    return { ok: false, message: `Empresa: ${cErr.message}${hint}` };
+  }
+
+  // Screening and not Sourcing. An infomemo is already a described company, so
+  // the 15 minute screening is the next gate, not identification.
+  const { data: project, error: pErr } = await supabase
+    .from('arpa_projects')
+    .insert({
+      company_id: company.id,
+      stage: 'Screening',
+      source: 'Infomemo',
+      theme_id: d.theme_id ?? null,
+      taxonomy_id: d.taxonomy_id ?? null,
+      owner: d.owner,
+    })
+    .select('id')
+    .single();
+
+  if (pErr) return { ok: false, message: `Proyecto: ${pErr.message}` };
+
+  const { data: person, error: sErr } = await supabase
+    .from('arpa_stakeholders')
+    .insert({ full_name: d.sender_name, org: d.sender_org, kind: d.sender_kind, email: d.sender_email })
+    .select('id')
+    .single();
+
+  if (sErr) {
+    return { ok: false, message: `Deal creado, pero sin remitente: ${sErr.message}`, projectId: project.id };
+  }
+
+  const { error: lErr } = await supabase.from('arpa_stakeholder_links').insert({
+    stakeholder_id: person.id,
+    project_id: project.id,
+    company_id: company.id,
+    role: 'Remitente del infomemo',
+  });
+
+  if (lErr) {
+    return { ok: false, message: `Deal creado, remitente sin vincular: ${lErr.message}`, projectId: project.id };
+  }
+
+  const { error: dErr } = await supabase.from('arpa_documents').insert({
+    project_id: project.id,
+    company_id: company.id,
+    title: d.doc_title,
+    doc_type: 'Info memo',
+    // A filename, not a URL. The file itself is in their mail or SharePoint:
+    // storing a link we cannot resolve would put a dead hyperlink on screen.
+    storage_path: d.doc_title,
+    uploaded_by: d.owner,
+  });
+
+  if (dErr) {
+    return { ok: false, message: `Deal creado, documento no registrado: ${dErr.message}`, projectId: project.id };
+  }
+
+  const { error: iErr } = await supabase.from('arpa_interactions').insert({
+    kind: 'Email',
+    direction: 'inbound',
+    project_id: project.id,
+    company_id: company.id,
+    stakeholder_id: person.id,
+    happened_at: d.received_on || new Date().toISOString().slice(0, 10),
+    summary: d.note ?? `Infomemo recibido: ${d.doc_title}`,
+    logged_by: d.owner,
+  });
+
+  if (iErr) {
+    return { ok: false, message: `Deal creado, interacción no registrada: ${iErr.message}`, projectId: project.id };
+  }
+
+  revalidatePath('/');
+  revalidatePath('/crm');
+  revalidatePath('/pipeline');
+  revalidatePath('/proyectos');
+  return { ok: true, message: 'Deal entrante registrado', projectId: project.id };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Stakeholder CRM. The blueprint's Contacts + Sources, as one person table and
 // a link table, so a banker who appears on four deals is one record.
@@ -1136,9 +1320,33 @@ export async function saveIndustry(input: unknown): Promise<ActionResult> {
 export async function clearExamples(): Promise<ActionResult> {
   const supabase = createClient();
 
+  // Companies first, and almost everything else goes with them: projects,
+  // scores, kill flags, documents, interactions and links all cascade from
+  // arpa_companies. People are a separate root, because a person is not owned
+  // by a company.
+  for (const table of ['arpa_companies', 'arpa_stakeholders'] as const) {
+    const { error } = await supabase.from(table).delete().eq('is_example', true);
+    if (error) return { ok: false, message: error.message };
+  }
+
+  // Then the stragglers: an example row hung on a REAL company survives the
+  // cascade, so it is deleted by its own flag.
+  for (const table of [
+    'arpa_scores',
+    'arpa_interactions',
+    'arpa_documents',
+    'arpa_stakeholder_links',
+    'arpa_project_companies',
+    'arpa_projects',
+  ] as const) {
+    const { error } = await supabase.from(table).delete().eq('is_example', true);
+    if (error) return { ok: false, message: error.message };
+  }
+
   // A seeded subsector a project already points at is NOT deleted. Deleting it
   // would null that project's industry, which is a worse outcome than leaving
-  // one labelled row behind, so it is reported instead.
+  // one labelled row behind, so it is reported instead. This runs AFTER the
+  // deletes above, so a subsector only the demo deals used is now free.
   const [{ data: used }, { data: seeded }] = await Promise.all([
     supabase.from('arpa_projects').select('taxonomy_id').not('taxonomy_id', 'is', null),
     supabase.from('arpa_taxonomy').select('id').eq('is_example', true),

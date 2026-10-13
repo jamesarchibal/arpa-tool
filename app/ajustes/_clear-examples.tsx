@@ -13,25 +13,28 @@ import { clearExamples } from '../actions';
  * if leaving takes one action instead of remembering which of thirty rows was
  * ours.
  */
-export default function ClearExamples({ count }: { count: number }) {
+export default function ClearExamples({ items }: { items: { label: string; count: number }[] }) {
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
 
-  if (count === 0) return null;
+  if (items.length === 0) return null;
+
+  const total = items.reduce((n, i) => n + i.count, 0);
+  const detail = items.map((i) => `${i.count} ${i.label}`).join(', ');
 
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
-      <p className="text-xs text-amber-800">
-        Hay <strong className="font-semibold">{count}</strong> fila(s) marcadas como{' '}
-        <strong className="font-semibold">ejemplo</strong>. Las pusimos nosotros para que la demo no
-        saliera en blanco. Editar una la convierte en vuestra; este botón borra las que queden.
+      <p className="max-w-3xl text-xs text-amber-800">
+        Hay <strong className="font-semibold">{total}</strong> fila(s) marcadas como{' '}
+        <strong className="font-semibold">ejemplo</strong>: {detail}. Las pusimos nosotros para que la
+        demo no saliera en blanco. Editar una la convierte en vuestra; este botón borra las que queden.
       </p>
       <button
         type="button"
         disabled={pending}
         onClick={() => {
-          if (!window.confirm('¿Borrar todas las filas de ejemplo?')) return;
+          if (!window.confirm(`¿Borrar las ${total} filas de ejemplo? ${detail}.`)) return;
           startTransition(async () => {
             const res = await clearExamples();
             setMessage(res.message);

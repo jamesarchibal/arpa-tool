@@ -373,6 +373,257 @@ export async function getIndustries(): Promise<IndustryRow[]> {
   return (data ?? []) as IndustryRow[];
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Origination, the proactive path.
+//
+// Ignasi described two doors into the funnel. The opportunistic one is a
+// document: an advisor sends an infomemo about one company. The proactive one
+// starts the other way round, from a temática and a subsector, looks at the
+// industry and its comparables, and only names companies at the end.
+//
+// This read serves the second door. It is deliberately NOT built on
+// `arpa_sourcing`, because that view hangs off projects: a company nobody has
+// opened a deal on yet would be invisible, and those are exactly the ones a
+// camino exists to find.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CaminoCompany {
+  id: string;
+  legal_name: string;
+  city: string | null;
+  region: string | null;
+  employees: number | null;
+  /** Year of the first director appointment. ARPA's proxy for owner age. */
+  admin_since: number | null;
+  ownership_type: OwnershipType | null;
+  /** Null means no deal has been opened on this company yet. */
+  project_id: string | null;
+  project_code: string | null;
+  stage: string | null;
+  /** M€, like every other money field here. Last deposited year. */
+  revenue: number | null;
+  ebitda: number | null;
+}
+
+export interface CaminoView {
+  companies: CaminoCompany[];
+  /** Companies in the subsector with no project on them yet. */
+  untouched: number;
+  /**
+   * The comparables, over the companies of this subsector that have figures.
+   * Medians and not averages: one outlier in a set of six would move a mean
+   * enough to misdescribe the subsector.
+   */
+  comparables: {
+    n: number;
+    revenue: number | null;
+    ebitda: number | null;
+    /** EBITDA over revenue, as a percentage. */
+    margin: number | null;
+  };
+}
+
+const median = (xs: number[]): number | null => {
+  if (xs.length === 0) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const i = Math.floor(s.length / 2);
+  return s.length % 2 ? s[i] : (s[i - 1] + s[i]) / 2;
+};
+
+export async function getCamino(taxonomyId: number): Promise<CaminoView> {
+  const supabase = createClient();
+
+  const { data: companyRows, error: cErr } = await supabase
+    .from('arpa_companies')
+    .select('id, legal_name, city, region, employees, admin_since, ownership_type')
+    .eq('taxonomy_id', taxonomyId)
+    .order('legal_name');
+
+  if (cErr) throw new Error(`arpa_companies camino: ${cErr.message}`);
+
+  const companies = (companyRows ?? []) as Omit<
+    CaminoCompany,
+    'project_id' | 'project_code' | 'stage' | 'revenue' | 'ebitda'
+  >[];
+
+  if (companies.length === 0) {
+    return { companies: [], untouched: 0, comparables: { n: 0, revenue: null, ebitda: null, margin: null } };
+  }
+
+  const { data: projectRows, error: pErr } = await supabase
+    .from('arpa_projects')
+    .select('id, company_id, code, stage, revenue_y3, ebitda_norm, ebitda_y3')
+    .in(
+      'company_id',
+      companies.map((c) => c.id),
+    );
+
+  if (pErr) throw new Error(`arpa_projects camino: ${pErr.message}`);
+
+  type Row = {
+    id: string;
+    company_id: string;
+    code: string | null;
+    stage: string;
+    revenue_y3: number | null;
+    ebitda_norm: number | null;
+    ebitda_y3: number | null;
+  };
+  const rows = (projectRows ?? []) as Row[];
+  const byCompany = new Map<string, Row>();
+  for (const r of rows) if (!byCompany.has(r.company_id)) byCompany.set(r.company_id, r);
+
+  const n = (v: number | null) => (v === null || v === undefined ? null : Number(v));
+
+  const merged: CaminoCompany[] = companies.map((c) => {
+    const p = byCompany.get(c.id);
+    return {
+      ...c,
+      project_id: p?.id ?? null,
+      project_code: p?.code ?? null,
+      stage: p?.stage ?? null,
+      revenue: p ? n(p.revenue_y3) : null,
+      ebitda: p ? n(p.ebitda_norm ?? p.ebitda_y3) : null,
+    };
+  });
+
+  const withFigures = merged.filter((c) => c.revenue !== null && c.ebitda !== null);
+
+  return {
+    companies: merged,
+    untouched: merged.filter((c) => c.project_id === null).length,
+    comparables: {
+      n: withFigures.length,
+      revenue: median(withFigures.map((c) => c.revenue as number)),
+      ebitda: median(withFigures.map((c) => c.ebitda as number)),
+      margin: median(
+        withFigures
+          .filter((c) => (c.revenue as number) > 0)
+          .map((c) => ((c.ebitda as number) / (c.revenue as number)) * 100),
+      ),
+    },
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Origination, the opportunistic path.
+//
+// A deal that arrived as a document from somebody. The word "infomemo" in
+// `source` is the marker, matched loosely because that field is free text and
+// already holds things like "Verdegí (infomemo)". The sender is read from the
+// stakeholder link and not parsed out of that text, so the person is in
+// Contactos and reappears on the next deal they send.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface InboundRow {
+  id: string;
+  code: string | null;
+  legal_name: string;
+  stage: string;
+  theme_name: string | null;
+  created_at: string;
+  /** Who sent it. Null if the link was removed by hand afterwards. */
+  sender: string | null;
+  sender_org: string | null;
+}
+
+export async function getInbound(): Promise<InboundRow[]> {
+  const supabase = createClient();
+
+  const { data: projectRows, error } = await supabase
+    .from('arpa_projects')
+    .select('id, code, stage, created_at, company_id, theme_id, arpa_companies(legal_name)')
+    .ilike('source', '%infomemo%')
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  if (error) throw new Error(`arpa_projects inbound: ${error.message}`);
+
+  const projects = (projectRows ?? []) as unknown as {
+    id: string;
+    code: string | null;
+    stage: string;
+    created_at: string;
+    company_id: string;
+    theme_id: number | null;
+    arpa_companies: { legal_name: string } | null;
+  }[];
+
+  if (projects.length === 0) return [];
+
+  const [links, themes] = await Promise.all([
+    supabase
+      .from('arpa_stakeholder_links')
+      .select('project_id, arpa_stakeholders(full_name, org, kind)')
+      .in(
+        'project_id',
+        projects.map((p) => p.id),
+      ),
+    supabase.from('arpa_themes').select('id, name'),
+  ]);
+
+  if (links.error) throw new Error(`arpa_stakeholder_links inbound: ${links.error.message}`);
+  if (themes.error) throw new Error(`arpa_themes inbound: ${themes.error.message}`);
+
+  // Only the kinds that send deals. A deal has an owner and a lawyer linked to
+  // it too, and whichever row came back first is not the sender.
+  const SENDER_KINDS = ['Intermediary', 'Banker', 'Broker', 'Advisor'];
+
+  const sender = new Map<string, { full_name: string; org: string | null }>();
+  for (const l of (links.data ?? []) as unknown as {
+    project_id: string | null;
+    arpa_stakeholders: { full_name: string; org: string | null; kind: string } | null;
+  }[]) {
+    if (!l.project_id || !l.arpa_stakeholders) continue;
+    if (!SENDER_KINDS.includes(l.arpa_stakeholders.kind)) continue;
+    if (!sender.has(l.project_id)) sender.set(l.project_id, l.arpa_stakeholders);
+  }
+
+  const themeName = new Map(((themes.data ?? []) as { id: number; name: string }[]).map((t) => [t.id, t.name]));
+
+  return projects.map((p) => ({
+    id: p.id,
+    code: p.code,
+    legal_name: p.arpa_companies?.legal_name ?? '—',
+    stage: p.stage,
+    theme_name: p.theme_id === null ? null : themeName.get(p.theme_id) ?? null,
+    created_at: p.created_at,
+    sender: sender.get(p.id)?.full_name ?? null,
+    sender_org: sender.get(p.id)?.org ?? null,
+  }));
+}
+
+/**
+ * How much demo content is in the database, by table.
+ *
+ * The clear button used to count only temáticas and subsectores, which under-
+ * reported the moment the demo deals arrived: it would offer to remove 4 rows
+ * and quietly take 60. The button has to name what it deletes.
+ */
+export async function getExampleCounts(): Promise<{ label: string; count: number }[]> {
+  const supabase = createClient();
+  const tables: [string, string][] = [
+    ['arpa_themes', 'temáticas'],
+    ['arpa_taxonomy', 'subsectores'],
+    ['arpa_companies', 'empresas'],
+    ['arpa_projects', 'proyectos'],
+    ['arpa_stakeholders', 'personas'],
+    ['arpa_interactions', 'interacciones'],
+    ['arpa_documents', 'documentos'],
+    ['arpa_scores', 'puntuaciones'],
+  ];
+
+  const results = await Promise.all(
+    tables.map(([table]) =>
+      supabase.from(table).select('*', { count: 'exact', head: true }).eq('is_example', true),
+    ),
+  );
+
+  return results
+    .map((r, i) => ({ label: tables[i][1], count: r.count ?? 0 }))
+    .filter((r) => r.count > 0);
+}
+
 export interface ProjectsView {
   rows: PipelineRow[];
   themes: { id: number; name: string; count: number }[];

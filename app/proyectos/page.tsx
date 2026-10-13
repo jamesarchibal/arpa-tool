@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { getProjects, getThemes, type PipelineRow } from '@/lib/arpa/db';
 import { FUNNEL_LANES } from '@/lib/arpa/lists';
 import TopNav from '../_topnav';
+import StageSelect from '../pipeline/_stage-select';
 import FocusSelect from './_focus';
 
 export const dynamic = 'force-dynamic';
@@ -75,6 +76,11 @@ function Card({
         taxonomyId={row.taxonomy_id}
         themes={themes}
       />
+
+      {/* The same control the pipeline table uses. A board you cannot move is a
+          table with rounded corners, and the lane a card sits in is derived from
+          the stage, so changing it here moves the card. */}
+      <StageSelect id={row.id} stage={row.stage} />
 
       <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
         {row.qss !== null ? (

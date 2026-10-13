@@ -1,4 +1,4 @@
-import { getIndustries, getThemes } from '@/lib/arpa/db';
+import { getExampleCounts, getIndustries, getThemes } from '@/lib/arpa/db';
 import TopNav from '../_topnav';
 import ClearExamples from './_clear-examples';
 import Industries from './_industries';
@@ -7,8 +7,11 @@ import Themes from './_themes';
 export const dynamic = 'force-dynamic';
 
 export default async function AjustesPage() {
-  const [themes, industries] = await Promise.all([getThemes(), getIndustries()]);
-  const examples = themes.filter((t) => t.is_example).length + industries.filter((i) => i.is_example).length;
+  const [themes, industries, examples] = await Promise.all([
+    getThemes(),
+    getIndustries(),
+    getExampleCounts(),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -24,7 +27,7 @@ export default async function AjustesPage() {
         </p>
       </div>
 
-      <ClearExamples count={examples} />
+      <ClearExamples items={examples} />
 
       <Themes themes={themes} />
       <Industries industries={industries} />
