@@ -101,7 +101,15 @@ function Card({
           and a card showing only the 100 says the opposite. The VETO already
           rides in the title line, so it is not repeated here. */}
       <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
-        <Gates qss={row.qss} om={row.om} pfr={row.pfr} compact />
+        <Gates
+          qss={row.qss}
+          om={row.om}
+          pfr={row.pfr}
+          qssCov={row.qss_cov}
+          omCov={row.om_cov}
+          pfrCov={row.pfr_cov}
+          compact
+        />
         {ebitda ? <span className="tabular-nums text-ink-faint">EBITDA {ebitda}</span> : null}
         {row.owner ? <span className="text-ink-faint">· {row.owner}</span> : null}
       </div>

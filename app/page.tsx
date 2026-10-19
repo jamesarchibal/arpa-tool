@@ -295,7 +295,15 @@ export default async function OriginacionPage({
                                 honest answer rather than a zero. */}
                             <td className="px-3 py-2.5">
                               {c.project_id ? (
-                                <Gates qss={c.qss} om={c.om} pfr={c.pfr} veto={c.has_veto} />
+                                <Gates
+                                  qss={c.qss}
+                                  om={c.om}
+                                  pfr={c.pfr}
+                                  qssCov={c.qss_cov}
+                                  omCov={c.om_cov}
+                                  pfrCov={c.pfr_cov}
+                                  veto={c.has_veto}
+                                />
                               ) : (
                                 <span className="text-[11px] text-ink-faint">
                                   sin proyecto, nada que puntuar

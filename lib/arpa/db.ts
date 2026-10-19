@@ -37,6 +37,14 @@ export interface PipelineRow {
   qss: number | null;
   om: number | null;
   pfr: number | null;
+  /**
+   * Share of each gate's weight that had a score, 0-100. A gate is renormalised
+   * over the criteria that had data, so the score alone cannot tell a thorough
+   * 90 from a 90 built on two of five criteria. Always read them as a pair.
+   */
+  qss_cov: number | null;
+  om_cov: number | null;
+  pfr_cov: number | null;
   last_scored_at: string | null;
   has_veto: boolean | null;
   /** The temática. Null until somebody says which play this deal is. */
@@ -412,6 +420,10 @@ export interface CaminoCompany {
   qss: number | null;
   om: number | null;
   pfr: number | null;
+  /** Share of each gate's weight that was actually scored, 0-100. */
+  qss_cov: number | null;
+  om_cov: number | null;
+  pfr_cov: number | null;
   has_veto: boolean | null;
 }
 
@@ -453,7 +465,18 @@ export async function getCamino(taxonomyId: number): Promise<CaminoView> {
 
   const companies = (companyRows ?? []) as Omit<
     CaminoCompany,
-    'project_id' | 'project_code' | 'stage' | 'revenue' | 'ebitda' | 'qss' | 'om' | 'pfr' | 'has_veto'
+    | 'project_id'
+    | 'project_code'
+    | 'stage'
+    | 'revenue'
+    | 'ebitda'
+    | 'qss'
+    | 'om'
+    | 'pfr'
+    | 'qss_cov'
+    | 'om_cov'
+    | 'pfr_cov'
+    | 'has_veto'
   >[];
 
   if (companies.length === 0) {
@@ -490,12 +513,21 @@ export async function getCamino(taxonomyId: number): Promise<CaminoView> {
   // The gates come from `arpa_pipeline` and not from `arpa_scores`, because the
   // view already defines "the latest score per gate" in SQL. Recomputing that
   // here is how two screens end up quoting different numbers for one deal.
-  type Gates = { id: string; qss: number | null; om: number | null; pfr: number | null; has_veto: boolean | null };
+  type Gates = {
+    id: string;
+    qss: number | null;
+    om: number | null;
+    pfr: number | null;
+    qss_cov: number | null;
+    om_cov: number | null;
+    pfr_cov: number | null;
+    has_veto: boolean | null;
+  };
   const gates = new Map<string, Gates>();
   if (rows.length > 0) {
     const { data: gateRows, error: gErr } = await supabase
       .from('arpa_pipeline')
-      .select('id, qss, om, pfr, has_veto')
+      .select('id, qss, om, pfr, qss_cov, om_cov, pfr_cov, has_veto')
       .in(
         'id',
         rows.map((r) => r.id),
@@ -519,6 +551,9 @@ export async function getCamino(taxonomyId: number): Promise<CaminoView> {
       qss: g?.qss ?? null,
       om: g?.om ?? null,
       pfr: g?.pfr ?? null,
+      qss_cov: g?.qss_cov ?? null,
+      om_cov: g?.om_cov ?? null,
+      pfr_cov: g?.pfr_cov ?? null,
       has_veto: g?.has_veto ?? null,
     };
   });

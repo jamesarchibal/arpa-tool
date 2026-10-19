@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { getPipeline, getTaxonomyOptions, type PipelineRow } from '@/lib/arpa/db';
 import { STAGES } from '@/lib/arpa/lists';
 import { ExportButton } from '../_export-button';
+import { ScorePill } from '../_gates';
 import NewLeadForm from './_new-lead';
 import StageSelect from './_stage-select';
 import TopNav from '../_topnav';
@@ -10,27 +11,6 @@ import TopNav from '../_topnav';
 export const dynamic = 'force-dynamic';
 
 const m = (v: number | null) => (v === null || v === undefined ? '—' : `${Number(v).toFixed(2)} M€`);
-
-function ScorePill({ value, label }: { value: number | null; label: string }) {
-  if (value === null || value === undefined) {
-    return (
-      <span className="inline-flex min-w-[46px] items-center justify-center rounded border border-border px-1.5 py-0.5 text-[11px] text-ink-faint">
-        {label} —
-      </span>
-    );
-  }
-  const tone =
-    value >= 80
-      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-      : value >= 60
-        ? 'border-amber-200 bg-amber-50 text-amber-700'
-        : 'border-rose-200 bg-rose-50 text-rose-700';
-  return (
-    <span className={`inline-flex min-w-[46px] items-center justify-center rounded border px-1.5 py-0.5 text-[11px] font-semibold tabular-nums ${tone}`}>
-      {label} {value}
-    </span>
-  );
-}
 
 function DecisionBadge({ decision, veto }: { decision: string | null; veto: boolean | null }) {
   if (!decision) return <span className="text-ink-faint">—</span>;
@@ -205,9 +185,9 @@ export default async function ArpaPage({ searchParams }: { searchParams: { stage
                   </td>
                   <td className="px-3 py-2.5">
                     <div className="flex gap-1">
-                      <ScorePill value={r.qss} label="QSS" />
-                      <ScorePill value={r.om} label="OM" />
-                      <ScorePill value={r.pfr} label="PFR" />
+                      <ScorePill value={r.qss} label="QSS" cov={r.qss_cov} />
+                      <ScorePill value={r.om} label="OM" cov={r.om_cov} />
+                      <ScorePill value={r.pfr} label="PFR" cov={r.pfr_cov} />
                     </div>
                   </td>
                   <td className="px-3 py-2.5 text-xs text-ink-soft">{r.owner ?? '—'}</td>

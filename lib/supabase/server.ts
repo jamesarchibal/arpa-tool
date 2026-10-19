@@ -18,5 +18,15 @@ export function createClient() {
 
   return createSupabaseClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
+    // Next patches global fetch and caches GETs in its Data Cache. A Supabase
+    // read is a GET, so without this a freshly imported company does not appear
+    // on the pipeline: the page re-renders (every screen is force-dynamic) and
+    // then gets served the previous response from disk. Caught by renaming a row
+    // in Postgres and reloading the page, which kept showing the old name.
+    //
+    // Set here rather than per query because every read in the app has the same
+    // requirement: this is a deal pipeline several people edit, and a stale row
+    // is worse than a slow one.
+    global: { fetch: (input, init) => fetch(input, { ...init, cache: 'no-store' }) },
   });
 }

@@ -352,9 +352,9 @@ export default async function SabiList({ current }: { current: SabiParams }) {
                   </td>
                   <td className="px-3 py-2.5">
                     <div className="flex gap-1">
-                      <ScorePill value={r.qss} label="QSS" />
-                      <ScorePill value={r.om} label="OM" />
-                      <ScorePill value={r.pfr} label="PFR" />
+                      <ScorePill value={r.qss} label="QSS" cov={r.qss_cov} />
+                      <ScorePill value={r.om} label="OM" cov={r.om_cov} />
+                      <ScorePill value={r.pfr} label="PFR" cov={r.pfr_cov} />
                     </div>
                     {r.decision_status ? (
                       <div className="mt-0.5 text-[11px] text-ink-mute">

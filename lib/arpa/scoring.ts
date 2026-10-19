@@ -552,6 +552,22 @@ export interface ScoreResult {
 export const DEFAULT_PROCEED_AT = 80; // = 4.0 on the blueprint's 1-5 scale
 export const DEFAULT_MONITOR_AT = 60; // = 3.0
 
+/**
+ * Below this share of a gate's weight the score is reported but NOT presented as
+ * a verdict, because it answers too little of the question to carry one.
+ *
+ * Each gate is renormalised over the weight that had data behind it, which stops
+ * a blank criterion dragging a score to zero. The side effect is that a thin
+ * score reads as a confident one: a real SABI import scored PFR 90/100 off 30 of
+ * 100 weight, two cheap criteria answered well and the three expensive ones not
+ * asked. Next to a fully diligenced 82 it looked like the better deal.
+ *
+ * This gates the DISPLAY only. It deliberately does not alter `score0to100` or
+ * the verdict, because the pass/monitor/proceed rule is ARPA's method and not
+ * ours to move. What we can refuse to do is colour 30% of an answer green.
+ */
+export const MIN_COVERAGE_FOR_VERDICT = 70;
+
 export function criterionKey(model: ModelId, criterionId: string): string {
   return `${model}_${criterionId}`;
 }

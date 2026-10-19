@@ -209,11 +209,19 @@ function parseSheet(ws: XLSX.WorkSheet, sheetName: string): SabiCompany | string
   const headerIdx = grid.findIndex((r) => /^cuentas (no )?consolidadas$/.test(norm(r?.[0] ?? null)));
   if (headerIdx < 0) return `${sheetName}: no se encontró el bloque de cuentas.`;
 
-  // Newest first in the file, so reverse everything into ascending order: the
-  // intake reads the last three entries as the three most recent years.
-  const years = values(headerIdx).map(year).filter((y): y is number => y !== null);
-  if (years.length === 0) return `${sheetName}: el bloque de cuentas no tiene años legibles.`;
-  years.reverse();
+  // The intake reads the LAST three entries as the three most recent years, so
+  // everything below must come out ascending.
+  //
+  // Do NOT assume a direction. SABI emits both: an export of one company prints
+  // 2017 -> 2024 left to right, a list export prints 2025 -> 2023. Hardcoding
+  // "newest first" does not fail loudly on the other layout, it silently hands
+  // over the series backwards, so `latest()` returns the OLDEST year and the
+  // scoring reads a 2017 headcount as today's. Read the direction off the header.
+  const fileYears = values(headerIdx).map(year).filter((y): y is number => y !== null);
+  if (fileYears.length === 0) return `${sheetName}: el bloque de cuentas no tiene años legibles.`;
+  const descending = fileYears.length > 1 && fileYears[0] > fileYears[fileYears.length - 1];
+  const asc = <T,>(xs: T[]): T[] => (descending ? [...xs].reverse() : xs);
+  const years = asc(fileYears);
 
   const series = (label: string): (number | null)[] => {
     const i = rowWithLabel(label);
@@ -222,7 +230,7 @@ function parseSheet(ws: XLSX.WorkSheet, sheetName: string): SabiCompany | string
     // Refuse rather than misalign. A length mismatch means this row does not
     // carry one figure per year, so matching them up by order would be fiction.
     if (raw.length !== years.length) return [];
-    return raw.map(money).reverse();
+    return asc(raw.map(money));
   };
 
   const revenue = series('ingresos de explotacion');

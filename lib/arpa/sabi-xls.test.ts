@@ -29,11 +29,27 @@ function row(pairs: Record<number, string | number>): (string | number | null)[]
   return out;
 }
 
-function build(): Uint8Array {
+/**
+ * `order: 'asc'` writes the SAME company with its years running oldest first,
+ * which is how a single-company export actually prints them. Both layouts must
+ * parse to identical output, because the direction is a formatting detail of
+ * the report and not a fact about the business.
+ */
+function build(order: 'desc' | 'asc' = 'desc'): Uint8Array {
   const aoa: (string | number | null)[][] = [];
   const put = (i: number, r: (string | number | null)[]) => {
     while (aoa.length <= i) aoa.push([]);
     aoa[i] = r;
+  };
+  /** Flips a row's values while leaving the label and the columns alone. */
+  const dir = (pairs: Record<number, string | number>): Record<number, string | number> => {
+    if (order === 'desc') return pairs;
+    const keys = Object.keys(pairs).map(Number).sort((a, b) => a - b);
+    const data = keys.filter((k) => k !== 0);
+    const flipped: Record<number, string | number> = {};
+    if (0 in pairs) flipped[0] = pairs[0];
+    data.forEach((k, i) => { flipped[k] = pairs[data[data.length - 1 - i]]; });
+    return flipped;
   };
 
   put(0, row({ 1: 'EJEMPLO INDUSTRIAL SL' }));
@@ -49,15 +65,15 @@ function build(): Uint8Array {
   put(55, row({ 0: '2561', 7: ' - ', 8: 'Tratamiento y revestimiento de metales' }));
 
   // The trap: header columns 14/22/29 against figure columns 10/16/24.
-  put(96, row({ 0: 'Cuentas No Consolidadas', 14: '31/12/2025', 22: '31/12/2024', 29: '31/12/2023' }));
+  put(96, row(dir({ 0: 'Cuentas No Consolidadas', 14: '31/12/2025', 22: '31/12/2024', 29: '31/12/2023' })));
   put(97, row({ 14: 'EUR', 22: 'EUR', 29: 'EUR' }));
-  put(101, row({ 0: '  Ingresos de explotación', 10: 9_000_000, 16: 8_000_000, 24: 7_000_000 }));
-  put(113, row({ 0: '  Número empleados', 10: 42, 16: 40, 24: 38 }));
-  put(138, row({ 0: '    Tesorería', 10: 500_000, 16: 400_000, 24: 300_000 }));
-  put(147, row({ 0: '   Acreedores a L. P.', 10: 1_000_000, 16: 900_000, 24: 800_000 }));
-  put(152, row({ 0: '   Deudas financieras', 10: 200_000, 16: 'n.d.', 24: 'n.d.' }));
-  put(158, row({ 0: '  Fondo de maniobra', 10: 1_250_000, 16: 1_100_000, 24: 950_000 }));
-  put(188, row({ 0: 'EBITDA', 10: 2_000_000, 16: 1_500_000, 24: 'n.d.' }));
+  put(101, row(dir({ 0: '  Ingresos de explotación', 10: 9_000_000, 16: 8_000_000, 24: 7_000_000 })));
+  put(113, row(dir({ 0: '  Número empleados', 10: 42, 16: 40, 24: 38 })));
+  put(138, row(dir({ 0: '    Tesorería', 10: 500_000, 16: 400_000, 24: 300_000 })));
+  put(147, row(dir({ 0: '   Acreedores a L. P.', 10: 1_000_000, 16: 900_000, 24: 800_000 })));
+  put(152, row(dir({ 0: '   Deudas financieras', 10: 200_000, 16: 'n.d.', 24: 'n.d.' })));
+  put(158, row(dir({ 0: '  Fondo de maniobra', 10: 1_250_000, 16: 1_100_000, 24: 950_000 })));
+  put(188, row(dir({ 0: 'EBITDA', 10: 2_000_000, 16: 1_500_000, 24: 'n.d.' })));
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const wb = XLSX.utils.book_new();
@@ -121,6 +137,23 @@ test('figures stay in euros for the intake to convert', () => {
   // If this ever comes back as 9 rather than 9_000_000 the caller's
   // `units: 'eur'` becomes a million-fold error that passes the EBITDA filter.
   assert.equal(c.revenue.at(-1), 9_000_000);
+});
+
+test('an oldest-first export parses identically to a newest-first one', () => {
+  // A real single-company SABI export prints 2017 -> 2024 left to right, the
+  // opposite of a list export. Assuming one direction does not fail loudly on
+  // the other, it hands the series over backwards: `latest()` then returns the
+  // OLDEST year, so a 2017 headcount gets scored as today's. Found on a real
+  // file where employees came back 72 instead of 230.
+  const { rows, warnings } = parseSabiWorkbook(build('asc'));
+  assert.deepEqual(warnings, []);
+  const c = rows[0];
+  assert.deepEqual(c.revenue, [7_000_000, 8_000_000, 9_000_000]);
+  assert.deepEqual(c.ebitda, [null, 1_500_000, 2_000_000]);
+  assert.equal(c.employees, 42);
+  assert.equal(c.working_capital, 1_250_000);
+  assert.equal(c.net_debt, 200_000 + 1_000_000 - 500_000);
+  assert.deepEqual(c, only());
 });
 
 test('a sheet with no accounts block is reported, not thrown', () => {
