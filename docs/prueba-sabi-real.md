@@ -21,14 +21,58 @@ and then `runIntake(...)`, exactly as the import form does, with `units: 'eur'`.
 Two kill criteria were detected from the data: k2 (EBITDA outside the 1-5 M€
 mandate) and, once the sector fit is corrected, k3.
 
-## What the system got right
+## Field by field against the raw cells
 
-Identity and CIF, city and region, CNAE, founding year, and all eight years of
-accounts. The derived figures came out of the parser and the intake without a
-human touching them: revenue CAGR 1.1 %, EBITDA margin 14.8 %, leverage 1.48x.
-The kill criterion for a company outside the mandate's size band fired on its own.
+Every figure below was checked against the cell it was scraped from, not against
+another run of the parser.
 
-## Three real bugs the file found
+| Field | In the Excel | Stored | |
+| --- | --- | --- | --- |
+| Razón social | PROMOCIONS LLORENS DEL VALLES ORIENTAL SL | igual | ok |
+| CIF | B62913454 | B62913454 | ok |
+| Localidad y provincia | 08440 CARDEDEU (BARCELONA) | CARDEDEU / BARCELONA | ok |
+| CNAE | 6820 primario, de cuatro | 6820 Alquiler de bienes inmobiliarios | ok |
+| Constitución | 12/06/2002 | 2002 | ok |
+| Empleados | 230 (2024) | 230 | ok |
+| Ingresos 2022-24 | 54,959,799.51 / 49,576,618.47 / 56,148,524.03 | 54.9598 / 49.5766 / 56.1485 M€ | ok |
+| EBITDA 2022-24 | 8,349,528.02 / 8,739,004.49 / 8,334,893.06 | 8.3495 / 8.7390 / 8.3349 M€ | ok |
+| Fondo de maniobra | 10,006,969.54 | 10.0070 M€ | ok |
+| Deuda neta | 6,527,512.14 + 13,997,654.73 - 8,220,057.90 | 12.3051 M€ | ok |
+| Capex | no está en el export | null | ok |
+
+Eight years parsed, three stored, which is what the scoring model consumes.
+Derived without a human: CAGR a tres años 1.1 %, margen EBITDA 14.8 %,
+apalancamiento 1.48x. The kill criterion for a company outside the mandate's
+size band fired on its own.
+
+The notes field also picked up the activity, the legal form, the share capital,
+the last filing date, the BvD independence indicator and the Global Ultimate
+Owner line, which is more context than a column model would have kept.
+
+## Four real bugs the file found
+
+### 0. The figures are the group's, and nothing said so
+
+The worst of the four, found on a second pass over the raw cells. The accounts
+block in this export is headed **Cuentas Consolidadas**, and row 12 says
+`Cuentas disponibles: Cons. & No Cons.`. So 56.1 M€ of revenue and 8.3 M€ of
+EBITDA are the group's, over the three companies SABI lists (the target plus
+LLORENS GMR S.L. and TREE BOX S.L., both 100 % owned).
+
+ARPA's mandate is 1-5 M€ of EBITDA. The deal was therefore sized, and killed on
+k2 for being too big, on figures that are not the target's. The company's own
+accounts exist in SABI and were simply not printed in this export.
+
+The parser's regex accepted either basis, took the first block and threw the
+answer away. It now records which basis it read and it travels with the figures
+into `financials_src`, the field the ficha already prints as "Fuente". The notes
+also carry `Cuentas disponibles`, so the reader can see that the other basis is
+one re-export away. Same change added the `Presidente` line, which was being
+dropped while the `Director ejecutivo` was kept.
+
+This is not a scoring bug. The scoring was right about the numbers it was given.
+
+## Three more
 
 ### 1. The parser read the years backwards
 
@@ -88,8 +132,20 @@ like the coverage work had not shipped. The page was fresh, the data was not.
   data.
 - **Ownership is not inferred.** This file is a textbook family succession:
   Cladellas Parera as president, Llorens Cladellas as CEO, Llorens Sierra as
-  administrador, all appointed 01/06/2017, BvD independence indicator U. The
-  parser leaves it in the notes, unread.
-- **The three administradores are not extracted as stakeholders**, even though
-  the stakeholders table exists.
+  administrador, all appointed 01/06/2017, BvD independence indicator U, zero
+  registered shareholders. All three names are now in the notes, but
+  `ownership_type` is still null and nothing scores it.
+- **The three officers are not extracted as stakeholders.** The
+  `arpa_stakeholders` and `arpa_stakeholder_links` tables exist and this company
+  has zero rows in them. The appointment dates would also fill `admin_since`,
+  which the intake schema already has as the owner-age proxy.
+- **The two subsidiaries are not captured.** LLORENS GMR S.L. and TREE BOX S.L.,
+  both 100 %, with their own revenue and headcount in the export.
+  `arpa_project_companies` is exactly the table for this.
 - **No capex in the export**, so cash conversion cannot be computed.
+- **The basis and the notes are on different screens.** The ficha popup prints
+  `cuentas consolidadas` under "Fuente" but no notes; the project detail page
+  prints the notes, including `Presidente` and `Cuentas disponibles`, but not the
+  basis. Both checked against the live HTML. Nothing is lost, but a reader has to
+  open two views to see that the figures are the group's and that the company's
+  own accounts exist.

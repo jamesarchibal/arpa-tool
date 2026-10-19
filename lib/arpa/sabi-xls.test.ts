@@ -177,5 +177,25 @@ test('every sheet is a company, so a bulk export needs no special path', () => {
     new Uint8Array(XLSX.write(multi, { type: 'array', bookType: 'xls' })),
   );
   assert.equal(rows.length, 2);
-  assert.equal(rows[1].source, 'SABI · Page 2');
+  assert.equal(rows[1].source, 'SABI · Page 2 · cuentas individuales');
+});
+
+test('the source says whether the figures are the group or the company', () => {
+  // SABI prints one basis or the other under the same heading, and the parser
+  // takes the first block it finds. On the real PROMOCIONS LLORENS export that
+  // block is consolidated: 56 M€ of revenue over three companies, against a
+  // mandate of 1-5 M€ of EBITDA. Screening that as if it were the target is how
+  // a deal inside the band gets killed for being too big, so the basis has to
+  // travel with the numbers.
+  const wb = XLSX.read(build(), { type: 'array', cellDates: true });
+  const ws = wb.Sheets['Page 1'];
+  // The fixture's accounts heading, row 96 zero-based, flipped to the other basis.
+  ws['A97'] = { t: 's', v: 'Cuentas Consolidadas' };
+  const out = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(out, ws, 'Page 1');
+  const { rows } = parseSabiWorkbook(
+    new Uint8Array(XLSX.write(out, { type: 'array', bookType: 'xls' })),
+  );
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].source, 'SABI · Page 1 · cuentas consolidadas');
 });

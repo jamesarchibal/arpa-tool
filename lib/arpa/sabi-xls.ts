@@ -209,6 +209,14 @@ function parseSheet(ws: XLSX.WorkSheet, sheetName: string): SabiCompany | string
   const headerIdx = grid.findIndex((r) => /^cuentas (no )?consolidadas$/.test(norm(r?.[0] ?? null)));
   if (headerIdx < 0) return `${sheetName}: no se encontró el bloque de cuentas.`;
 
+  // WHICH set of accounts this is. The regex above accepts either, takes the
+  // first block in the sheet and used to throw the answer away, which is the
+  // difference between screening a company and screening its whole group.
+  // PROMOCIONS LLORENS exports consolidated only: 56 M€ of revenue and 8.3 M€
+  // of EBITDA over three companies. ARPA's mandate is 1-5 M€ of EBITDA, so the
+  // deal was sized, and killed on k2, on figures that are not the target's.
+  const consolidated = !/no consolidadas/i.test(String(grid[headerIdx]?.[0] ?? ''));
+
   // The intake reads the LAST three entries as the three most recent years, so
   // everything below must come out ascending.
   //
@@ -258,7 +266,15 @@ function parseSheet(ws: XLSX.WorkSheet, sheetName: string): SabiCompany | string
     ['Estado', rightOf('estado detallado') ?? rightOf('estado')],
     ['Forma jurídica', rightOf('forma juridica detallada') ?? rightOf('forma juridica')],
     ['Capital social (EUR)', rightOf('capital social (eur)')],
+    // Both officers, not just the CEO. Together with the appointment dates they
+    // are the succession signal a human reads to set OWNERSHIP_FIT, and dropping
+    // the president halved it.
+    ['Presidente', rightOf('presidente')],
     ['Director ejecutivo', rightOf('director ejecutivo')],
+    // SABI says here whether the other basis exists at all. "Cons. & No Cons."
+    // next to a consolidated block means the target's own accounts are one
+    // re-export away, which is the first thing to do before trusting the size.
+    ['Cuentas disponibles', rightOf('cuentas disponibles')],
     ['Últimas cuentas', rightOf('fecha ultimas cuentas')],
     ['Independencia BvD', rightOf('indicador independencia bvd')],
     ['Accionistas', rightOf('num. accionistas')],
@@ -291,7 +307,10 @@ function parseSheet(ws: XLSX.WorkSheet, sheetName: string): SabiCompany | string
     net_debt: netDebt,
     working_capital: latest(workingCapital),
     notes: notes || null,
-    source: `SABI · ${sheetName}`,
+    // The basis rides with the figures. It lands in `financials_src`, which the
+    // ficha already prints, so nobody can read an EBITDA off this import without
+    // being told whether it belongs to the company or to its group.
+    source: `SABI · ${sheetName} · ${consolidated ? 'cuentas consolidadas' : 'cuentas individuales'}`,
   };
 }
 

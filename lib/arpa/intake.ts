@@ -287,7 +287,12 @@ export async function runIntake(batch: IntakeBatch, actor: string): Promise<Inta
       // blueprint's own scale. It says nothing about normalisation, which stays
       // null until a human does the add-backs.
       data_confidence: 'High' as const,
-      financials_src: batch.label ? `SABI · ${batch.label}` : 'SABI export',
+      // The row's own source leads, because it is the only part that says which
+      // basis the figures are on. A SABI export can print the consolidated
+      // accounts of a group instead of the company's, and then the EBITDA that
+      // ARPA's 1-5 M€ mandate is tested against is not the target's at all. The
+      // batch label is where the figures came from; this is what they are.
+      financials_src: [row.source ?? 'SABI', batch.label].filter(Boolean).join(' · ').slice(0, 240),
       source: row.source ?? 'SABI',
       intake_batch: batchId,
       updated_at: new Date().toISOString(),
