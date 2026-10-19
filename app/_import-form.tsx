@@ -64,7 +64,11 @@ export default function ImportForm() {
       // the parser that produced the figures rather than left to the user.
       const res = await importBatch({
         units: 'eur',
-        label: `SABI · ${file.name}`,
+        // Just the file name. The row already says "SABI" and which accounting
+        // basis it is, and the two get joined into `financials_src`, so prefixing
+        // here printed "SABI · Page 1 · cuentas consolidadas · SABI · export.xlsx"
+        // in the ficha's Fuente field.
+        label: file.name,
         rows,
       });
       setMessage({ ok: res.ok, text: res.message });
