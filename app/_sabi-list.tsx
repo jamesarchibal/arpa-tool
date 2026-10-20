@@ -209,15 +209,12 @@ export default async function SabiList({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <p className="max-w-3xl text-xs leading-relaxed text-ink-mute">
-          El stock importado. SABI decide quién está en la lista, porque trae veinte años de cifras y
-          se puede puntuar. El <strong className="font-semibold text-ink-soft">BORME</strong>, el
-          boletín del Registro Mercantil, solo añade una señal encima: quién ha publicado actos que
-          parecen preparar una venta.
-        </p>
-        <ExportButton kind="originacion" params={current} />
-      </div>
+      <p className="max-w-3xl text-xs leading-relaxed text-ink-mute">
+        El stock importado. SABI decide quién está en la lista, porque trae veinte años de cifras y
+        se puede puntuar. El <strong className="font-semibold text-ink-soft">BORME</strong>, el
+        boletín del Registro Mercantil, solo añade una señal encima: quién ha publicado actos que
+        parecen preparar una venta.
+      </p>
 
       <details
         open={view.total === 0}
@@ -355,6 +352,18 @@ export default async function SabiList({
             ))}
           </div>
         ) : null}
+      </div>
+
+      {/* Next to the row count and not up in the header: the export writes out
+          whatever the filters left on screen, so the button belongs where that
+          number is, not three blocks above where it reads as "export the lot". */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-[11px] text-ink-faint">
+          {view.rows.length === view.total
+            ? `${view.total} empresa(s)`
+            : `${view.rows.length} de ${view.total} empresa(s)`}
+        </span>
+        <ExportButton kind="originacion" params={current} />
       </div>
 
       {view.rows.length === 0 ? (

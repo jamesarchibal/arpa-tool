@@ -48,11 +48,21 @@ export async function GET(request: Request) {
     // exactly what the user was looking at. It pages internally, so there is no
     // truncated-export trap here.
     const triaje = params.get('triaje');
+    // `tema` and `sub` are filters like any other since the camino stopped being
+    // its own screen. Leaving them out here is the exact failure this comment
+    // claims cannot happen: a file with more rows than the screen that asked
+    // for it.
+    const num = (k: string) => {
+      const v = Number(params.get(k));
+      return Number.isFinite(v) && v > 0 ? v : undefined;
+    };
     const { rows } = await getSourcing({
       region: params.get('region') ?? undefined,
       batch: params.get('batch') ?? undefined,
       phase: params.get('phase') ?? undefined,
       triage: triaje === 'untriaged' || triaje === 'promoted' ? triaje : undefined,
+      themeId: num('tema'),
+      taxonomyId: num('sub'),
     });
 
     const csv = toCsv(
