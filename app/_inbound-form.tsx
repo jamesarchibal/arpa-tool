@@ -40,6 +40,7 @@ export default function InboundForm({
 
     startTransition(async () => {
       const res = await createInboundDeal({
+        name: raw.name ? String(raw.name).trim() : null,
         legal_name: String(raw.legal_name ?? '').trim(),
         cif: raw.cif ? String(raw.cif) : null,
         region: raw.region ? String(raw.region) : null,
@@ -72,6 +73,16 @@ export default function InboundForm({
           Un asesor manda una empresa. Este formulario escribe de una vez la empresa, el proyecto en
           Screening, quién lo mandó, el documento y la fecha en que llegó. El remitente se guarda en
           Contactos, así que la próxima vez que mande algo ya está ahí.
+        </p>
+      </div>
+
+      <div>
+        <label className={label} htmlFor="name">
+          Nombre del proyecto
+        </label>
+        <input id="name" name="name" maxLength={240} className={field} placeholder="Proyecto Segura" />
+        <p className="mt-1 text-[11px] text-ink-faint">
+          Opcional. Si lo dejas vacío el proyecto se llama como la empresa.
         </p>
       </div>
 

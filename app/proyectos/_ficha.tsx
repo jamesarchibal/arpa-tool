@@ -89,6 +89,8 @@ export default function Ficha({
 
   const where = [company.city, company.region, company.country].filter(Boolean).join(', ');
   const head = [
+    // Only when the project carries its own name, or the heading would repeat it.
+    project.name?.trim() ? company.legal_name : null,
     company.cif,
     where,
     company.employees ? `${company.employees} empleados` : null,
@@ -101,7 +103,9 @@ export default function Ficha({
     <div className="pb-2">
       <header className="px-5 pt-5">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h2 className="text-xl font-bold leading-tight text-ink">{company.legal_name}</h2>
+          <h2 className="text-xl font-bold leading-tight text-ink">
+            {project.name?.trim() || company.legal_name}
+          </h2>
           {project.code ? <span className="font-mono text-xs text-ink-faint">{project.code}</span> : null}
           {flagged.length > 0 ? (
             <span className="text-[10px] font-bold text-rose-600">

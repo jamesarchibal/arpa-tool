@@ -92,6 +92,8 @@ export default async function ArpaProjectPage({
   const tab: TabKey = (TABS.find((t) => t.key === requested)?.key ?? 'datos') as TabKey;
 
   const header = [
+    // Only when the project carries its own name, or the h1 would repeat it.
+    project.name?.trim() ? company.legal_name : null,
     company.cif,
     [company.city, company.region, company.country].filter(Boolean).join(', '),
     company.employees ? `${company.employees} empleados` : null,
@@ -114,7 +116,7 @@ export default async function ArpaProjectPage({
         </Link>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-ink">{company.legal_name}</h1>
+            <h1 className="text-2xl font-bold text-ink">{project.name?.trim() || company.legal_name}</h1>
             <p className="mt-1 text-xs text-ink-mute">{header.join(' · ') || 'Sin datos de ficha'}</p>
             {taxonomy ? (
               <p className="mt-1 text-xs text-ink-soft">

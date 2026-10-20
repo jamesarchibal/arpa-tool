@@ -5,6 +5,7 @@ import {
   getProjects,
   getTaxonomyOptions,
   getThemes,
+  projectTitle,
   type PipelineRow,
 } from '@/lib/arpa/db';
 import { FUNNEL_LANES } from '@/lib/arpa/lists';
@@ -14,6 +15,7 @@ import NewLeadForm from '../_new-lead';
 import StageSelect from '../_stage-select';
 import TopNav from '../_topnav';
 import Ficha from './_ficha';
+import FilterMenu from './_filter-menu';
 import FocusSelect from './_focus';
 import Modal from './_modal';
 
@@ -109,20 +111,12 @@ function href(params: Params, patch: Partial<Params>) {
   return qs ? `/proyectos?${qs}` : '/proyectos';
 }
 
-function Chip({ to, active, children }: { to: string; active: boolean; children: React.ReactNode }) {
-  return (
-    <Link
-      href={to}
-      className={`rounded-md border px-2.5 py-1 text-xs transition ${
-        active
-          ? 'border-brand bg-brand-wash font-semibold text-brand'
-          : 'border-border text-ink-mute hover:bg-bg-elevated hover:text-ink'
-      }`}
-    >
-      {children}
-    </Link>
-  );
-}
+/** One filter's selection, read off the URL as a comma separated list. */
+const picked = (v: string | undefined) =>
+  (v ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 
 function Card({
   row,
@@ -147,7 +141,7 @@ function Card({
           className="text-sm font-semibold leading-tight text-ink hover:text-brand"
           title="Ver toda la información sin salir del tablero"
         >
-          {row.legal_name}
+          {projectTitle(row)}
         </Link>
         {row.has_veto ? (
           <span className="shrink-0 text-[10px] font-bold text-rose-600" title="Hay un kill criterion marcado">
@@ -155,6 +149,12 @@ function Card({
           </span>
         ) : null}
       </div>
+
+      {/* A named project would otherwise hide which company it is about, which
+          is the one thing somebody scanning the board needs to recognise. */}
+      {row.project_name?.trim() ? (
+        <div className="text-[11px] text-ink-mute">{row.legal_name}</div>
+      ) : null}
 
       {/* A deal over several companies is the whole point of the many-to-many,
           so the card says so rather than showing only the primary name. */}
@@ -257,69 +257,54 @@ export default async function ProyectosPage({ searchParams }: { searchParams: Pa
               </Link>
             ))}
           </div>
-          <ExportButton kind="pipeline" />
           <NewLeadForm taxonomy={taxonomy} />
         </div>
       </div>
 
-      {view.unthemed > 0 ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800">
-          <strong className="font-semibold">{view.unthemed}</strong> de {view.total} proyecto(s) no
-          tienen temática. El desplegable de cada tarjeta la asigna.
-        </div>
-      ) : null}
-
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="w-20 text-[11px] uppercase tracking-wider text-ink-faint">Temática</span>
-          <Chip to={href(searchParams, { theme: undefined })} active={!searchParams.theme}>
-            Todas
-          </Chip>
-          {view.themes.map((t) => (
-            <Chip
-              key={t.id}
-              to={href(searchParams, { theme: String(t.id) })}
-              active={searchParams.theme === String(t.id)}
-            >
-              {t.name} {t.count}
-            </Chip>
-          ))}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="w-20 text-[11px] uppercase tracking-wider text-ink-faint">Industria</span>
-          <Chip to={href(searchParams, { industry: undefined })} active={!searchParams.industry}>
-            Todas
-          </Chip>
-          {view.industries.map((i) => (
-            <Chip
-              key={i.id}
-              to={href(searchParams, { industry: String(i.id) })}
-              active={searchParams.industry === String(i.id)}
-            >
-              {i.subsector} {i.count}
-            </Chip>
-          ))}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="w-20 text-[11px] uppercase tracking-wider text-ink-faint">Etapa</span>
-          <Chip to={href(searchParams, { stage: undefined })} active={!searchParams.stage}>
-            Todas
-          </Chip>
-          {view.stages.map((s) => (
-            <Chip
-              key={s.stage}
-              to={href(searchParams, { stage: s.stage })}
-              active={searchParams.stage === s.stage}
-            >
-              {s.stage} {s.count}
-            </Chip>
-          ))}
-        </div>
+      {/* Three dropdowns side by side, each taking SEVERAL values. The three
+          rows of chips they replaced grew with the data: twenty one subsectores
+          is twenty one buttons, and the table started below the fold. */}
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <FilterMenu
+          label="Temática"
+          param="theme"
+          params={searchParams}
+          selected={picked(searchParams.theme)}
+          options={view.themes.map((t) => ({ value: String(t.id), label: t.name, count: t.count }))}
+        />
+        <FilterMenu
+          label="Industria"
+          param="industry"
+          params={searchParams}
+          selected={picked(searchParams.industry)}
+          options={view.industries.map((i) => ({
+            value: String(i.id),
+            label: i.subsector,
+            count: i.count,
+          }))}
+        />
+        <FilterMenu
+          label="Etapa"
+          param="stage"
+          params={searchParams}
+          selected={picked(searchParams.stage)}
+          options={view.stages.map((s) => ({ value: s.stage, label: s.stage, count: s.count }))}
+        />
       </div>
 
       {v === 'tabla' ? <Summary rows={view.rows} /> : null}
+
+      {/* Above whatever is below it, in all three views. The export writes out
+          the rows you are looking at, so it belongs next to them and not up in
+          the title block where it reads as a page-level action. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-[11px] text-ink-faint">
+          {view.rows.length === view.total
+            ? `${view.total} proyecto(s)`
+            : `${view.rows.length} de ${view.total} proyecto(s)`}
+        </span>
+        <ExportButton kind="pipeline" />
+      </div>
 
       {view.rows.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border bg-bg-card px-6 py-12 text-center">
@@ -393,10 +378,12 @@ export default async function ProyectosPage({ searchParams }: { searchParams: Pa
                         scroll={false}
                         className="font-medium text-ink hover:text-brand"
                       >
-                        {r.legal_name}
+                        {projectTitle(r)}
                       </Link>
                       <div className="text-[11px] text-ink-faint">
-                        {[r.code, r.region, r.ownership_type].filter(Boolean).join(' · ') || '—'}
+                        {[r.project_name?.trim() ? r.legal_name : null, r.code, r.region, r.ownership_type]
+                          .filter(Boolean)
+                          .join(' · ') || '—'}
                       </div>
                     </td>
                     <td className="px-3 py-2.5 text-xs text-ink-soft">

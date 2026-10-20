@@ -55,6 +55,17 @@ export interface PipelineRow {
   industry_pre_score: number | null;
   /** How many companies hang off the project. One for a plain deal. */
   company_count: number;
+  /**
+   * The deal's own name. NULL means it is called after its primary company,
+   * which is what every project meant before the column existed. Read it
+   * through `projectTitle()` so the fallback lives in one place.
+   */
+  project_name: string | null;
+}
+
+/** What to call a project on screen: its own name, or its company's. */
+export function projectTitle(r: { project_name: string | null; legal_name: string }): string {
+  return r.project_name?.trim() || r.legal_name;
 }
 
 /**
@@ -229,6 +240,8 @@ export interface CompanyRecord {
 export interface ProjectRecord {
   id: string;
   company_id: string;
+  /** The deal's own name. Null means "called after its primary company". */
+  name: string | null;
   code: string | null;
   stage: string;
   decision_status: string | null;
@@ -754,14 +767,23 @@ export async function getProjects(
   const industryNames = new Map<number, string>();
   for (const i of await getTaxonomyOptions()) industryNames.set(i.id, i.subsector);
 
-  const themeId = filters.theme ? Number(filters.theme) : null;
-  const industryId = filters.industry ? Number(filters.industry) : null;
+  // Comma separated, because each filter now takes several values at once:
+  // "¿qué tengo en Sourcing y en Screening?" is one question, and before this it
+  // took two page loads and a mental sum. An empty set means no filter, so the
+  // default URL still shows everything.
+  const set = (v: string | undefined) => {
+    const parts = (v ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+    return parts.length ? new Set(parts) : null;
+  };
+  const themeIds = set(filters.theme);
+  const industryIds = set(filters.industry);
+  const stages = set(filters.stage);
 
   const rows = all.filter(
     (r) =>
-      (themeId === null || r.theme_id === themeId) &&
-      (industryId === null || r.taxonomy_id === industryId) &&
-      (!filters.stage || r.stage === filters.stage),
+      (themeIds === null || (r.theme_id !== null && themeIds.has(String(r.theme_id)))) &&
+      (industryIds === null || (r.taxonomy_id !== null && industryIds.has(String(r.taxonomy_id)))) &&
+      (stages === null || stages.has(r.stage)),
   );
 
   const tally = <K>(pick: (r: PipelineRow) => K | null) => {

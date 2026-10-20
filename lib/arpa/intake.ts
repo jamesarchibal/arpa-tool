@@ -119,6 +119,29 @@ export const intakeBatchSchema = z.object({
 export type IntakeRow = z.infer<typeof intakeRowSchema>;
 export type IntakeBatch = z.infer<typeof intakeBatchSchema>;
 
+/**
+ * Records the project's first company in the many-to-many.
+ *
+ * Every place that creates a project has to call this. `arpa_projects.company_id`
+ * is only a cached pointer to the primary; `arpa_project_companies` is what
+ * `company_count` is computed from and what a buy-and-build over three companies
+ * will hang off. The table existed for a week before anything wrote to it, which
+ * is why every real project reported zero companies.
+ *
+ * A failure here is deliberately NOT fatal: the project exists and is usable, so
+ * losing the whole import over a membership row would be the worse outcome. The
+ * unique index on (project_id, company_id) makes a retry harmless.
+ */
+export async function linkPrimaryCompany(
+  supabase: ReturnType<typeof createClient>,
+  projectId: string,
+  companyId: string,
+): Promise<void> {
+  await supabase
+    .from('arpa_project_companies')
+    .insert({ project_id: projectId, company_id: companyId, role: 'Target', is_primary: true });
+}
+
 export interface IntakeRowResult {
   legal_name: string;
   cif: string | null;
@@ -256,7 +279,10 @@ export async function runIntake(batch: IntakeBatch, actor: string): Promise<Inta
         });
         continue;
       }
-      companyId = data.id;
+      // `String()` is not cosmetic: the client returns an untyped row, so without
+      // it the variable stays `string | null` and the rest of the loop cannot tell
+      // that the company now certainly exists.
+      companyId = String(data.id);
     }
 
     // One live opportunity per company. Re-importing refreshes the numbers on
@@ -327,6 +353,7 @@ export async function runIntake(batch: IntakeBatch, actor: string): Promise<Inta
         continue;
       }
       projectId = data.id;
+      await linkPrimaryCompany(supabase, projectId, companyId);
     }
 
     // Score it with the same engine the workbench uses, so an imported row and

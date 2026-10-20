@@ -5,7 +5,12 @@ import { z } from 'zod';
 
 import { createClient } from '@/lib/supabase/server';
 import { parseCalendarIcs, parseContactsCsv } from '@/lib/arpa/contacts-import';
-import { intakeBatchSchema, runIntake, type IntakeResult } from '@/lib/arpa/intake';
+import {
+  intakeBatchSchema,
+  linkPrimaryCompany,
+  runIntake,
+  type IntakeResult,
+} from '@/lib/arpa/intake';
 import {
   DOC_TYPES,
   ENRICH_SOURCES,
@@ -267,6 +272,12 @@ export async function saveScores(input: unknown): Promise<ActionResult & { overa
 }
 
 const companySchema = z.object({
+  /**
+   * The DEAL's name, not the company's. Optional because most deals are one
+   * company and repeating its name adds nothing; null means "call it after its
+   * company", which is what every project meant before the column existed.
+   */
+  name: z.string().trim().max(240).nullable().optional(),
   legal_name: z.string().min(2).max(240),
   cif: z.string().max(20).nullable().optional(),
   country: z.string().length(2).default('ES'),
@@ -289,7 +300,7 @@ export async function createLead(input: unknown): Promise<ActionResult & { proje
     return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos no válidos' };
   }
 
-  const { owner, source, ...company } = parsed.data;
+  const { name, owner, source, ...company } = parsed.data;
   const supabase = createClient();
 
   const { data: created, error: cErr } = await supabase
@@ -305,14 +316,22 @@ export async function createLead(input: unknown): Promise<ActionResult & { proje
 
   const { data: project, error: pErr } = await supabase
     .from('arpa_projects')
-    .insert({ company_id: created.id, stage: 'Sourcing', owner: owner ?? null, source: source ?? null })
+    .insert({
+      name: name || null,
+      company_id: created.id,
+      stage: 'Sourcing',
+      owner: owner ?? null,
+      source: source ?? null,
+    })
     .select('id')
     .single();
 
   if (pErr) return { ok: false, message: pErr.message };
+  await linkPrimaryCompany(supabase, project.id, created.id);
 
   revalidatePath('/proyectos');
-  return { ok: true, message: 'Lead creado', projectId: project.id };
+  revalidatePath('/');
+  return { ok: true, message: 'Proyecto creado', projectId: project.id };
 }
 
 /**
@@ -362,6 +381,7 @@ export async function startFromCamino(input: unknown): Promise<ActionResult & { 
     .single();
 
   if (error) return { ok: false, message: error.message };
+  await linkPrimaryCompany(supabase, data.id, parsed.data.company_id);
 
   revalidatePath('/');
   revalidatePath('/proyectos');
@@ -383,6 +403,8 @@ export async function startFromCamino(input: unknown): Promise<ActionResult & { 
 export async function createInboundDeal(input: unknown): Promise<ActionResult & { projectId?: string }> {
   const parsed = z
     .object({
+      /** The deal's name. Optional, same rule as `createLead`. */
+      name: z.string().trim().max(240).nullable().optional(),
       legal_name: z.string().trim().min(2).max(240),
       cif: text(20),
       region: text(120),
@@ -428,6 +450,7 @@ export async function createInboundDeal(input: unknown): Promise<ActionResult & 
   const { data: project, error: pErr } = await supabase
     .from('arpa_projects')
     .insert({
+      name: d.name || null,
       company_id: company.id,
       stage: 'Screening',
       source: 'Infomemo',
@@ -439,6 +462,7 @@ export async function createInboundDeal(input: unknown): Promise<ActionResult & 
     .single();
 
   if (pErr) return { ok: false, message: `Proyecto: ${pErr.message}` };
+  await linkPrimaryCompany(supabase, project.id, company.id);
 
   const { data: person, error: sErr } = await supabase
     .from('arpa_stakeholders')

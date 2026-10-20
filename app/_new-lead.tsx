@@ -44,6 +44,7 @@ export default function NewLeadForm({ taxonomy }: { taxonomy: TaxonomyOption[] }
     const raw = Object.fromEntries(fd.entries());
 
     const payload = {
+      name: raw.name ? String(raw.name).trim() : null,
       legal_name: String(raw.legal_name ?? '').trim(),
       cif: raw.cif ? String(raw.cif).trim().toUpperCase() : null,
       country: String(raw.country || 'ES').toUpperCase(),
@@ -75,7 +76,7 @@ export default function NewLeadForm({ taxonomy }: { taxonomy: TaxonomyOption[] }
         onClick={() => setOpen(true)}
         className="rounded bg-brand px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-brand-hover"
       >
-        + Nueva empresa
+        + Nuevo proyecto
       </button>
     );
   }
@@ -83,13 +84,21 @@ export default function NewLeadForm({ taxonomy }: { taxonomy: TaxonomyOption[] }
   return (
     <div className="w-full max-w-xl rounded-lg border border-border bg-bg-card p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-ink">Nueva empresa y proyecto</h2>
+        <h2 className="text-sm font-semibold text-ink">Nuevo proyecto</h2>
         <button type="button" onClick={() => setOpen(false)} className="text-xs text-ink-mute hover:text-ink">
           Cancelar
         </button>
       </div>
 
       <form onSubmit={onSubmit} className="space-y-3">
+        <div>
+          <label className={label} htmlFor="name">Nombre del proyecto</label>
+          <input id="name" name="name" maxLength={240} className={field} placeholder="Proyecto Segura" />
+          <p className="mt-1 text-[11px] text-ink-faint">
+            Opcional. Si lo dejas vacío el proyecto se llama como la empresa.
+          </p>
+        </div>
+
         <div>
           <label className={label} htmlFor="legal_name">Razón social *</label>
           <input id="legal_name" name="legal_name" required minLength={2} className={field} placeholder="Conservas del Segura, S.L." />
