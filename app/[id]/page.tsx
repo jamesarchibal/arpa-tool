@@ -109,8 +109,8 @@ export default async function ArpaProjectPage({
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/pipeline" className="text-xs text-ink-mute transition hover:text-ink">
-          ← Pipeline
+        <Link href="/proyectos?v=tabla" className="text-xs text-ink-mute transition hover:text-ink">
+          ← Proyectos
         </Link>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
           <div>

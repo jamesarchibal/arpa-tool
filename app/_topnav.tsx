@@ -9,13 +9,13 @@ import Link from 'next/link';
  * every imported company is scored on the way in and the scores are already on
  * the Originación and Pipeline rows.
  *
- * Proyectos and Pipeline are the same rows seen two ways: Pipeline is the table
- * you work a deal from, Proyectos is the board you look at a portfolio of deals
- * from. Ajustes sits last and quiet because its two lists are typed once.
+ * Pipeline folded into Proyectos for the same reason: they read the same view
+ * and listed the same deals, so the table is a view of Proyectos (`?v=tabla`)
+ * and not a tab of its own. Ajustes sits last and quiet because its two lists
+ * are typed once.
  */
 const TABS = [
   { href: '/', label: 'Originación', key: 'origination' },
-  { href: '/pipeline', label: 'Pipeline', key: 'pipeline' },
   { href: '/proyectos', label: 'Proyectos', key: 'projects' },
   { href: '/crm', label: 'Contactos', key: 'crm' },
   { href: '/ajustes', label: 'Ajustes', key: 'settings' },
@@ -24,7 +24,7 @@ const TABS = [
 export default function TopNav({
   active,
 }: {
-  active: 'origination' | 'pipeline' | 'projects' | 'crm' | 'settings';
+  active: 'origination' | 'projects' | 'crm' | 'settings';
 }) {
   return (
     <header className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-border pb-4">

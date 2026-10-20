@@ -2,7 +2,7 @@ import Link from 'next/link';
 
 import type { ProjectDetail } from '@/lib/arpa/db';
 import { derive } from '@/lib/arpa/scoring';
-import StageSelect from '../pipeline/_stage-select';
+import StageSelect from '../_stage-select';
 import FocusSelect from './_focus';
 
 // Mirrors `basePath` in next.config.mjs. A plain <a> downloads the route

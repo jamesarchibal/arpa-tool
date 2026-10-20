@@ -5,7 +5,7 @@ import { ExportButton } from './_export-button';
 import { ScorePill } from './_gates';
 import ImportForm from './_import-form';
 import IndustryFilter from './_industry-filter';
-import StageSelect from './pipeline/_stage-select';
+import StageSelect from './_stage-select';
 
 /**
  * The imported stock: every company the SABI export brought in, scored, with

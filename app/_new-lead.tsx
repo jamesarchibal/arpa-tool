@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
-import { createLead } from '../actions';
+import { createLead } from './actions';
 
 interface TaxonomyOption {
   id: number;

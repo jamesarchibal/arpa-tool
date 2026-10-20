@@ -82,7 +82,7 @@ export async function saveProject(input: unknown): Promise<ActionResult> {
   if (error) return { ok: false, message: error.message };
 
   revalidatePath(`/${id}`);
-  revalidatePath('/pipeline');
+  revalidatePath('/proyectos');
   return { ok: true, message: 'Datos guardados' };
 }
 
@@ -108,7 +108,7 @@ export async function setStage(input: unknown): Promise<ActionResult> {
   // '/' too: moving a company off Sourcing is exactly what "send it to the
   // pipeline" means on the Originación screen, so that list has to change.
   revalidatePath('/');
-  revalidatePath('/pipeline');
+  revalidatePath('/proyectos');
   revalidatePath(`/${parsed.data.id}`);
   return { ok: true, message: `Movido a ${parsed.data.stage}` };
 }
@@ -137,7 +137,7 @@ export async function importBatch(input: unknown): Promise<ActionResult & { resu
   try {
     const result = await runIntake(parsed.data, 'marc');
     revalidatePath('/');
-    revalidatePath('/pipeline');
+    revalidatePath('/proyectos');
     return {
       ok: result.rejected === 0,
       message:
@@ -255,7 +255,7 @@ export async function saveScores(input: unknown): Promise<ActionResult & { overa
   if (uErr) return { ok: false, message: uErr.message };
 
   revalidatePath(`/${projectId}`);
-  revalidatePath('/pipeline');
+  revalidatePath('/proyectos');
 
   return {
     ok: true,
@@ -311,7 +311,7 @@ export async function createLead(input: unknown): Promise<ActionResult & { proje
 
   if (pErr) return { ok: false, message: pErr.message };
 
-  revalidatePath('/pipeline');
+  revalidatePath('/proyectos');
   return { ok: true, message: 'Lead creado', projectId: project.id };
 }
 
@@ -365,7 +365,6 @@ export async function startFromCamino(input: unknown): Promise<ActionResult & { 
 
   revalidatePath('/');
   revalidatePath('/proyectos');
-  revalidatePath('/pipeline');
   return { ok: true, message: 'Proyecto abierto', projectId: data.id };
 }
 
@@ -494,7 +493,6 @@ export async function createInboundDeal(input: unknown): Promise<ActionResult & 
 
   revalidatePath('/');
   revalidatePath('/crm');
-  revalidatePath('/pipeline');
   revalidatePath('/proyectos');
   return { ok: true, message: 'Deal entrante registrado', projectId: project.id };
 }
@@ -848,7 +846,7 @@ export async function enrichCompany(input: unknown): Promise<ActionResult> {
   }
 
   if (project_id) revalidatePath(`/${project_id}`);
-  revalidatePath('/pipeline');
+  revalidatePath('/proyectos');
   return { ok: true, message: 'Ficha actualizada' };
 }
 
@@ -1306,7 +1304,6 @@ export async function saveIndustry(input: unknown): Promise<ActionResult> {
   if (error) return { ok: false, message: error.message };
   revalidatePath('/ajustes');
   revalidatePath('/proyectos');
-  revalidatePath('/pipeline');
   return { ok: true, message: id ? 'Subsector guardado' : 'Subsector creado' };
 }
 
@@ -1366,7 +1363,6 @@ export async function clearExamples(): Promise<ActionResult> {
 
   revalidatePath('/ajustes');
   revalidatePath('/proyectos');
-  revalidatePath('/pipeline');
   return {
     ok: true,
     message: kept
@@ -1400,7 +1396,6 @@ export async function setProjectFocus(input: unknown): Promise<ActionResult> {
 
   if (error) return { ok: false, message: error.message };
   revalidatePath('/proyectos');
-  revalidatePath('/pipeline');
   revalidatePath(`/${project_id}`);
   return { ok: true, message: 'Enfoque guardado' };
 }
