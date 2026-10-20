@@ -96,6 +96,17 @@ export interface SourcingFilters {
   batch?: string;
   /** lead | early | sold | none */
   phase?: string;
+  /**
+   * The camino: a temática and a subsector. They are filters over this same
+   * list and not a separate screen, because the proactive path never looked
+   * anything up, it only narrowed what was already imported.
+   *
+   * The subsector matches the PROJECT's industry or, when the project has none,
+   * the primary company's. `arpa_pipeline` already resolves that fallback into
+   * `taxonomy_id`, so this reads one column instead of repeating the rule.
+   */
+  themeId?: number;
+  taxonomyId?: number;
 }
 
 export interface SourcingView {
@@ -107,6 +118,15 @@ export interface SourcingView {
   untriaged: number;
   /** Row counts per BORME phase over the whole import, not just the filtered page. */
   phases: { lead: number; early: number; sold: number; none: number };
+  /**
+   * How many companies sit in each subsector and each temática, keyed by id.
+   * The picker renders these next to the options so you can see a subsector is
+   * empty BEFORE choosing it. Without them the dropdown lists twenty-one
+   * subsectors that all look equally promising and twenty of them return
+   * nothing.
+   */
+  byTaxonomy: Record<number, number>;
+  byTheme: Record<number, number>;
 }
 
 /**
@@ -143,7 +163,9 @@ export async function getSourcing(filters: SourcingFilters = {}): Promise<Sourci
       (!filters.triage || triaged(r) === (filters.triage === 'promoted')) &&
       (!filters.region || r.region === filters.region) &&
       (!filters.batch || r.intake_batch === filters.batch) &&
-      (!filters.phase || (r.borme_phase ?? 'none') === filters.phase),
+      (!filters.phase || (r.borme_phase ?? 'none') === filters.phase) &&
+      (!filters.themeId || r.theme_id === filters.themeId) &&
+      (!filters.taxonomyId || r.taxonomy_id === filters.taxonomyId),
   );
 
   // Highest conviction first, missing scores last: an import drops hundreds of
@@ -160,6 +182,15 @@ export async function getSourcing(filters: SourcingFilters = {}): Promise<Sourci
 
   const phase = (p: string) => all.filter((r) => (r.borme_phase ?? 'none') === p).length;
 
+  const tally = (pick: (r: SourcingRow) => number | null) => {
+    const out: Record<number, number> = {};
+    for (const r of all) {
+      const k = pick(r);
+      if (k !== null) out[k] = (out[k] ?? 0) + 1;
+    }
+    return out;
+  };
+
   return {
     rows,
     regions: uniq(all.map((r) => r.region)),
@@ -167,6 +198,8 @@ export async function getSourcing(filters: SourcingFilters = {}): Promise<Sourci
     total: all.length,
     untriaged: all.filter((r) => r.stage === 'Sourcing').length,
     phases: { lead: phase('lead'), early: phase('early'), sold: phase('sold'), none: phase('none') },
+    byTaxonomy: tally((r) => r.taxonomy_id),
+    byTheme: tally((r) => r.theme_id),
   };
 }
 

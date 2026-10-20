@@ -4,6 +4,7 @@ import { getSourcing, type SourcingRow } from '@/lib/arpa/db';
 import { ExportButton } from './_export-button';
 import { ScorePill } from './_gates';
 import ImportForm from './_import-form';
+import IndustryFilter from './_industry-filter';
 import StageSelect from './pipeline/_stage-select';
 
 /**
@@ -164,18 +165,39 @@ const TRIAGE = [
   { key: 'promoted', label: 'Ya en pipeline' },
 ] as const;
 
-export default async function SabiList({ current }: { current: SabiParams }) {
+export default async function SabiList({
+  current,
+  themes,
+  industries,
+}: {
+  current: SabiParams;
+  themes: { id: number; name: string }[];
+  industries: {
+    id: number;
+    sector: string;
+    category: string;
+    subsector: string;
+    pre_score: number | null;
+  }[];
+}) {
   const triage =
     current.triaje === 'untriaged' || current.triaje === 'promoted' ? current.triaje : undefined;
+
+  const themeId = current.tema ? Number(current.tema) : undefined;
+  const taxonomyId = current.sub ? Number(current.sub) : undefined;
 
   const view = await getSourcing({
     region: current.region,
     batch: current.batch,
     phase: current.phase,
     triage,
+    themeId,
+    taxonomyId,
   });
 
-  const filtered = Boolean(current.region || current.batch || current.phase || current.triaje);
+  const filtered = Boolean(
+    current.region || current.batch || current.phase || current.triaje || current.tema || current.sub,
+  );
   const withSignal = view.total - view.phases.none;
 
   const stats: [string, string][] = [
@@ -228,6 +250,47 @@ export default async function SabiList({ current }: { current: SabiParams }) {
       </div>
 
       <div className="space-y-2">
+        {/* The camino, as two more filters. It used to be a picker above its own
+            table, with this list folded away underneath. Both read the same
+            rows: getCamino() is `where taxonomy_id = ?`, it looks nothing up
+            outside the base. Two tables over one set of rows is how the same
+            company shows up twice with different columns. */}
+        {themes.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="w-24 text-[11px] uppercase tracking-wider text-ink-faint">
+              Temática
+            </span>
+            <Chip href={withFilter(current, { tema: null })} active={!current.tema}>
+              Cualquiera
+            </Chip>
+            {themes.map((t) => (
+              <Chip
+                key={t.id}
+                href={withFilter(current, {
+                  tema: current.tema === String(t.id) ? null : String(t.id),
+                })}
+                active={current.tema === String(t.id)}
+              >
+                {t.name} ({view.byTheme[t.id] ?? 0})
+              </Chip>
+            ))}
+          </div>
+        ) : null}
+
+        {industries.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="w-24 text-[11px] uppercase tracking-wider text-ink-faint">
+              Industria
+            </span>
+            <IndustryFilter
+              industries={industries}
+              taxonomyId={taxonomyId ?? null}
+              counts={view.byTaxonomy}
+              params={current as Record<string, string | undefined>}
+            />
+          </div>
+        ) : null}
+
         <div className="flex flex-wrap items-center gap-2">
           <span className="w-24 text-[11px] uppercase tracking-wider text-ink-faint">Señal</span>
           <Chip href={withFilter(current, { phase: null })} active={!current.phase}>
