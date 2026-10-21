@@ -26,6 +26,7 @@ These are the live actions. Everything below this section is history.
 | A11 | Originación was two screens for one thing. The camino is a filter, so it belongs on top of the list, not above its own copy of it. | "si es un buscador/filtro no deberia estar separado de la lista de debajo. el cuadro vacio es la lista de abajo" | **hecho**. The temática and the subsector are now two more filter rows of the single list, which shows the whole history by default. The picker card, its duplicate table and the `<details>` are gone. `arpa_sourcing` had to expose `theme_id`, `theme_name` and `taxonomy_id`, which `SourcingRow extends PipelineRow` already claimed it returned. |
 | A12 | An upload should produce a NAMED project, and you should choose which companies go inside it. Originación should then list projects, not companies. | "al hacer una subida de una emrpesa o varias, eso se convirte en proyecto... crear el nombre del pryecto y decidir qué va dentro" | **a medias**. Done: a project has its own `name`, nullable so nothing had to be backfilled with invented text (null means "called after its primary company", read through `projectTitle()`), and both doors of Originación plus the Proyectos button ask for it. `arpa_project_companies` is now backfilled and written by all four creation paths through `linkPrimaryCompany()`, so `company_count` stopped being 0 on every real project. Still open: the import creates one project per company and never asks, so there is no step where you name the project and pick which companies go inside. |
 | A13 | Pipeline and Proyectos are one tab. | "luego pipeline y proyectos me parece el mismo tab, porque los dejarias separados?" | **hecho**. They were provably the same rows: `getProjects()` wraps `getPipeline()` and both read `arpa_pipeline`. The only difference was that one painted the money columns. Pipeline is now `?v=tabla`, a third view next to Tablero and Tarjetas, and its money summary is computed over the FILTERED rows instead of always over everything. `/pipeline` 307s to `/proyectos?v=tabla` because that URL was live for weeks. Side effect worth having: a table row and a board card now open the same popup, which is part of why the two tabs felt unrelated. |
+| A14 | Build Ignasi's IOS v9 as a V2 beside V1, with a switch on `/arpa`, so the two can be compared before choosing Airtable or custom. | "podemos montar todo esto como V2 (es decir sin cambiar la version actual y poniendo dos pestañas en la web de /arpa) asi vemos los dos de lado a lado. y de ahi luego decidimos" | **hecho** for the agreed scope. Section "IOS v9, V2" at the end of this file. |
 
 Blocked, and stays blocked: the real temáticas and the real pre-scores are
 ARPA's content. Ignasi agreed to send his slides and Excel. We do not invent
@@ -120,3 +121,58 @@ The current version. Full plan in `ios-v0.md`.
 | A separate Proyectos tab, not a kanban folded into Pipeline | hecho |
 | Demo data must be seeded but flagged as an example, and clearable | hecho as a mechanism, **A1 is the missing content** |
 | The two master lists get their own Ajustes tab | hecho |
+
+### IOS v9, V2, from the 2026-10-20 email and the 21-oct build
+
+Ignasi sent his own architecture: 21 tables, 583 fields, 33 screens, 22
+automations, plus his real content. The email asks us to choose Airtable or a
+custom build. The honest way to choose is to see it running, so his design is
+built as **V2** next to V1, with a switch in the top bar.
+
+| Instruction | State |
+| --- | --- |
+| Do not touch the current version | **permanente**. The only edit to V1 is one `<VersionSwitch>` in `app/_topnav.tsx`. New routes `app/v2/**`, new tables `ios_*`, new lib `lib/ios/*`. V1's row counts were 2 / 2 / 21 / 3 before and after. |
+| Two tabs on `/arpa` so both can be seen side by side | **hecho**. `app/_version-switch.tsx`, imported by `app/_topnav.tsx` and `app/v2/layout.tsx`. |
+| Library with their real content | **hecho**. 100 subsectors, 140 theses, 486 thesis-subsector links, 173 archetypes, 22 sources, 258 companies, 0 rejects. `scripts/ios-seed.ts`, idempotent, verified by running it twice. |
+| The stage only changes through an approved gate decision | **hecho**. `app/v2/actions.ts` exports no `setStage`, and `ios_projects.stage` has exactly one writer, `ios_record_gate_decision`. |
+| Portfolio, KPIs, DD Tracker, Valuation cases, Value Creation Initiatives, role permissions, the advisor form, Financials by period, the AI agents | **fuera de alcance** for this version, agreed before building. |
+
+Five things worth keeping, because each one cost a measurement:
+
+- **The real header of every `Seed_*` sheet is the third row.** Row 1 is a title,
+  row 2 the "Mirror of build-pack/..." note. The seeder asserts the first header
+  cell by name and aborts if it moves, so a v10 with an extra preamble row fails
+  loudly instead of loading garbage.
+- **The thesis-subsector N:N comes from the `Industries` column**, which gives
+  486 pairs and matches `Seed_Industries.Subsector` 486 out of 486. The
+  `Applicable Subsectors (library text)` column matches 0 out of 425: it is
+  descriptive tags, 16 distinct values over 140 theses. 17 theses have
+  `Industries` empty and all 17 are `Scope = Cross-sector`, on purpose, so the
+  Tesis screen shows them rather than filtering them out.
+- **The weighted score must be rounded to 2 decimals before the tier compares.**
+  `Electrical equipment / switchgear / transformers` sums to 3.7499999999999996,
+  so a raw `>= 3.75` gives B where ARPA says A. With the round, the tier matches
+  on all 100 rows: 21 A, 36 B, 43 C. There is a test named after that number.
+- **The authoritative gate rule is the `Projects.Gate Ready?` formula in
+  `Field_Dictionary`, not the `Stage_Gates` header note.** The note is
+  incomplete in two places: Screening also requires a linked thesis, and the
+  Closing gate requires no approved document at all, only `Closing Status =
+  Closed`. We implemented the formula.
+- **A16 is enforced in the database, not only in the action.**
+  `check (decision_type <> 'Advance' or status <> 'Approved' or
+  gate_ready_at_decision)` on `ios_gate_decisions`. Probed on purpose: a
+  hand-written insert advancing a closed gate fails with
+  `ios_gate_decisions_advance_needs_ready`.
+
+Two stumps we told them about rather than hid:
+
+- `open_required_dd_items` is an integer a person types, because the DD Tracker
+  is out of scope. The Full DD gate will not open until it reads 0.
+- A16 also wants the approver to be a Partner. There are no roles in scope, so
+  `decided_by` is free text and `lib/ios/gates.ts` carries a `// TODO(roles)`.
+
+If the pipeline ever freezes because `recordGateDecision` has a bug, the escape
+hatch is `scripts/q.mjs` patching `ios_projects.stage` by hand. It is not a
+dropdown in the interface, and that is deliberate: a board you can drag is a
+board whose funnel numbers mean nothing, which is the complaint their own
+document opens with.

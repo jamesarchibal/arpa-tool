@@ -1,5 +1,7 @@
 import Link from 'next/link';
 
+import VersionSwitch from './_version-switch';
+
 /**
  * The tabs, in the order the work actually happens.
  *
@@ -43,9 +45,12 @@ export default function TopNav({
           </Link>
         ))}
       </nav>
-      <span className="font-mono text-xs uppercase tracking-[0.12em] text-ink-faint">
-        ARPA Partners
-      </span>
+      <div className="flex items-center gap-3">
+        <span className="font-mono text-xs uppercase tracking-[0.12em] text-ink-faint">
+          ARPA Partners
+        </span>
+        <VersionSwitch current="v1" />
+      </div>
     </header>
   );
 }
