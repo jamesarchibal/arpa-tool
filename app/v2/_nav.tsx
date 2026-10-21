@@ -11,6 +11,10 @@ import { usePathname } from 'next/navigation';
  * and S18 Projects are three screens over one list with three filters, and their
  * four library screens are one catalogue with a view switch. Sourcing therefore
  * carries arquetipos, empresas and fuentes as `?v=`.
+ *
+ * Docs is deliberately not one of them. It is the manual, not a seventh dataset,
+ * so it sits past a divider in a different shape: an outlined round pill instead
+ * of a solid tab. Giving it the same shape would invite people to read it as data.
  */
 const TABS = [
   { href: '/v2', label: 'Mi trabajo' },
@@ -44,6 +48,20 @@ export default function V2Nav() {
           </Link>
         );
       })}
+
+      <span aria-hidden className="mx-1 h-5 w-px bg-border" />
+
+      <Link
+        href="/v2/docs"
+        className={`inline-flex items-center gap-1.5 rounded-full border border-dashed px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.08em] transition ${
+          pathname.startsWith('/v2/docs')
+            ? 'border-brand bg-brand-wash text-brand'
+            : 'border-strong text-ink-faint hover:border-brand hover:text-brand'
+        }`}
+      >
+        <span aria-hidden>?</span>
+        Docs
+      </Link>
     </nav>
   );
 }
