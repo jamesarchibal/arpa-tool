@@ -74,17 +74,36 @@ Partner no está, porque no hay roles.
 | QA-26 | Ownership | Companies.CEO Is Shareholder? = Yes / No / Unknown según la tabla de accionistas. | **No.** No hay tabla de accionistas. |
 | QA-27 | SharePoint | A22 rellena SharePoint Folder URL o crea la tarea de respaldo. | **No.** Fuera de alcance. |
 
+## Por qué falta lo que falta
+
+Tres motivos distintos, no uno. Mezclarlos es lo que hace que una lista de huecos
+parezca una lista de excusas.
+
+**1. Lo acordamos dejar fuera.** Portfolio, KPIs, DD Tracker, Valuation por casos,
+Value Creation Initiatives, el formulario externo de asesores, Financials por
+periodo, los agentes de IA, la tabla de interacciones, la de accionistas y
+SharePoint. Son 9 de sus 21 tablas. El criterio fue construir primero lo que es
+difícil de garantizar en cualquier herramienta, y las reglas son eso: gates,
+vocabulario, orden de etapas, enlaces, integridad de la carga. Esto es superficie
+y se añade después.
+
+**2. No existe la pieza, y es un hueco real, no una decisión.** Los **roles**. Hoy
+hay una contraseña compartida y quien entra puede hacer todo. Por eso su QA-08 no
+se puede pasar, y la mitad de su A16 (que apruebe un Partner) tampoco. Es lo
+primero que hay que cerrar si esto sigue adelante.
+
+**3. Lo hicimos distinto a propósito.** Donde su diseño crea una tarea para
+reclamar un dato que falta, nosotros hacemos el dato obligatorio. Su A12 crea una
+tarea de Data Quality si un Pass va sin motivo; aquí el formulario no deja guardar
+sin motivo. Mejor impedirlo que reclamarlo. Si prefiere su versión, se cambia: es
+una preferencia, no una limitación.
+
+Y un muñón a la vista, dicho por su nombre en vez de taparse:
+`open_required_dd_items` es un número que teclea una persona, porque el DD Tracker
+está fuera de alcance. El gate de Full Due Diligence no abre hasta que marque 0.
+
 ## Lo que esta tabla dice de verdad
 
-Las comprobaciones que V2 pasa enteras son casi todas de la misma familia: reglas.
-Gates, vocabulario, orden de etapas, enlaces, recuentos de la carga. Las que no
-pasa son casi todas de otra familia: superficie. Más tablas, más pantallas, roles,
-tareas, SharePoint, agentes.
-
-Eso es exactamente lo que se decidió construir primero, y es la parte difícil de
-garantizar en cualquier herramienta. La superficie se añade. Una regla que no se
-puede garantizar no se arregla añadiendo pantallas.
-
-Las dos excepciones honestas, por si pesan más que lo anterior: **QA-08**, los
-roles, que no es una pantalla sino una pieza que falta, y **QA-16**, el contador de
-ítems de DD escrito a mano.
+Las comprobaciones que V2 pasa enteras son casi todas reglas. Las que no pasa son
+casi todas superficie. La superficie se añade. Una regla que no se puede
+garantizar no se arregla añadiendo pantallas.
