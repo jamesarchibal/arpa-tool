@@ -14,6 +14,14 @@ import {
   type ProjectPatch,
 } from '@/lib/ios/gates';
 import {
+  SABI_ORIGIN,
+  SABI_SOURCE_NAME,
+  fillPatch,
+  pickArchetype,
+  toLongListDraft,
+  type ExistingCompany,
+} from '@/lib/ios/sabi-import';
+import {
   CLOSING_STATUS,
   CONFIDENTIALITY,
   DOC_STATUS,
@@ -359,4 +367,193 @@ export async function addIosPerimeterCompany(input: unknown): Promise<ActionResu
   if (error) return { ok: false, message: error.message };
   revalidatePath(`/v2/pipeline/${parsed.data.project_id}`);
   return { ok: true, message: 'Empresa añadida al perímetro' };
+}
+
+// ------------------------------------------------------------ the SABI import
+
+/**
+ * A figure in euros. The bound is 1e12, which is a hundred times Spain's largest
+ * company: past that the file is not what we think it is.
+ */
+const eurFigure = z.number().finite().min(-1e12).max(1e12).nullable();
+
+const sabiSchema = z.object({
+  rows: z
+    .array(
+      z.object({
+        legal_name: z.string().trim().min(2).max(300),
+        region: z.string().trim().max(160).nullable(),
+        cnae: z.string().trim().max(160).nullable(),
+        revenue: z.array(eurFigure).max(40),
+        ebitda: z.array(eurFigure).max(40),
+        notes: z.string().trim().max(4000).nullable(),
+      }),
+    )
+    .min(1)
+    .max(500),
+});
+
+/** The `ios_sources` row every SABI company points at, or the error that stopped us. */
+async function findOrCreateSource(
+  supabase: ReturnType<typeof createClient>,
+): Promise<string | { message: string }> {
+  const found = await supabase
+    .from('ios_sources')
+    .select('id')
+    .ilike('name', SABI_SOURCE_NAME)
+    .maybeSingle();
+  if (found.error) return { message: found.error.message };
+  if (found.data) return found.data.id as string;
+
+  const made = await supabase
+    .from('ios_sources')
+    .insert({
+      name: SABI_SOURCE_NAME,
+      source_type: SABI_ORIGIN,
+      notes: 'Creada por la importación de exports de SABI.',
+    })
+    .select('id')
+    .single();
+  if (made.error) return { message: made.error.message };
+  return made.data.id as string;
+}
+
+export interface SabiImportResult extends ActionResult {
+  created: number;
+  updated: number;
+  unchanged: number;
+  /** Per company, so the screen can say what happened to each one. */
+  rows: {
+    name: string;
+    status: 'created' | 'updated' | 'unchanged';
+    archetype: string | null;
+  }[];
+}
+
+/**
+ * Loads a parsed SABI export into the long list.
+ *
+ * The file is read in the BROWSER, exactly as V1 does it and for the same
+ * reason: one SABI worksheet per company is 210 KB, and Vercel caps a request
+ * body at 4.5 MB, so uploading the raw workbook starts failing at about twenty
+ * companies. Compact JSON has no such ceiling. The client is therefore not
+ * trusted and every figure is revalidated here.
+ *
+ * Matching is by name, the same unique index the seeder uses
+ * (`lower(btrim(name))`), so re-importing the same export is a no-op rather than
+ * 258 duplicates. The mapping and the never-overwrite-with-empty rule are in
+ * `lib/ios/sabi-import.ts` and tested there.
+ */
+export async function importSabiCompanies(input: unknown): Promise<SabiImportResult> {
+  const empty = { created: 0, updated: 0, unchanged: 0, rows: [] };
+  const parsed = sabiSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos no válidos', ...empty };
+  }
+  const supabase = createClient();
+
+  const [existing, archetypes] = await Promise.all([
+    supabase
+      .from('ios_companies')
+      .select(
+        'id, name, province, revenue_estimate_eur_m, ebitda_estimate_eur_m, research_notes, archetype_id, industry_id',
+      )
+      .limit(5000),
+    supabase.from('ios_archetypes').select('id, name, cnae_codes, industry_id').limit(5000),
+  ]);
+  if (existing.error) return { ok: false, message: existing.error.message, ...empty };
+  if (archetypes.error) return { ok: false, message: archetypes.error.message, ...empty };
+
+  // Their 22 sources are web directories and rankings; SABI is not among them,
+  // so it is created once, here, rather than seeded from a file it is not in.
+  // Find-then-insert and not upsert: the unique index is on `lower(btrim(name))`,
+  // an expression, and `on conflict (name)` does not match an expression index.
+  const sourceId = await findOrCreateSource(supabase);
+  if (typeof sourceId !== 'string') {
+    return { ok: false, message: sourceId.message, ...empty };
+  }
+
+  const key = (s: string) => s.trim().toLowerCase();
+  const byName = new Map(existing.data.map((c) => [key(c.name as string), c]));
+  const provinces = [
+    ...new Set(existing.data.map((c) => c.province as string | null).filter((p): p is string => !!p)),
+  ];
+  const archetypeRows = archetypes.data.map((a) => ({
+    id: a.id as string,
+    name: a.name as string,
+    cnae_codes: (a.cnae_codes as string[] | null) ?? [],
+    industry_id: a.industry_id as string | null,
+  }));
+  const result: SabiImportResult = { ok: true, message: '', ...empty, rows: [] };
+  const inserts: Record<string, unknown>[] = [];
+  // A workbook can hold the same company twice (a re-export appended to the
+  // file), and two inserts of one name would hit the unique index and fail the
+  // whole batch, so the batch is deduped before it is sent.
+  const seen = new Set<string>();
+
+  for (const row of parsed.data.rows) {
+    const draft = toLongListDraft(row, provinces);
+    const archetype = pickArchetype(draft.cnae, archetypeRows);
+    const current = byName.get(key(draft.name));
+
+    if (current) {
+      const patch = fillPatch(current as unknown as ExistingCompany, draft, archetype);
+      if (Object.keys(patch).length === 0) {
+        result.unchanged += 1;
+        result.rows.push({
+          name: draft.name,
+          status: 'unchanged',
+          archetype: archetype?.name ?? null,
+        });
+        continue;
+      }
+      const { error } = await supabase
+        .from('ios_companies')
+        .update({ ...patch, updated_at: new Date().toISOString() })
+        .eq('id', current.id);
+      if (error) return { ...result, ok: false, message: error.message };
+      result.updated += 1;
+      result.rows.push({
+        name: draft.name,
+        status: 'updated',
+        archetype: archetype?.name ?? null,
+      });
+      continue;
+    }
+
+    if (seen.has(key(draft.name))) continue;
+    seen.add(key(draft.name));
+
+    inserts.push({
+      name: draft.name,
+      country: 'Spain',
+      province: draft.province,
+      archetype_id: archetype?.id ?? null,
+      industry_id: archetype?.industry_id ?? null,
+      status: 'Mapped',
+      origin_type: SABI_ORIGIN,
+      revenue_estimate_eur_m: draft.revenue_estimate_eur_m,
+      ebitda_estimate_eur_m: draft.ebitda_estimate_eur_m,
+      source_id: sourceId,
+      // A filed annual account, not a web directory guess.
+      source_confidence: 'High',
+      research_notes: draft.research_notes,
+    });
+    result.rows.push({
+      name: draft.name,
+      status: 'created',
+      archetype: archetype?.name ?? null,
+    });
+  }
+
+  if (inserts.length > 0) {
+    const { error } = await supabase.from('ios_companies').insert(inserts);
+    if (error) return { ...result, ok: false, message: error.message };
+    result.created = inserts.length;
+  }
+
+  revalidatePath('/v2/sourcing');
+  revalidatePath('/v2');
+  result.message = `${result.created} nuevas, ${result.updated} actualizadas, ${result.unchanged} sin cambios`;
+  return result;
 }

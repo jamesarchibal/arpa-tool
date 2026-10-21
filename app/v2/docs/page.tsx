@@ -281,6 +281,57 @@ const SECTIONS: { id: string; title: string; hint: string; body: React.ReactNode
     ),
   },
   {
+    id: 'entrada-salida',
+    title: 'Cómo sacar los datos y cómo meterlos',
+    hint: 'CSV en cada pantalla, SABI en Empresas',
+    body: (
+      <>
+        <P>
+          <b className="text-ink">Descargar.</b> Cada pantalla tiene un botón que baja{' '}
+          <b className="text-ink">lo que está viendo</b>, con los filtros aplicados: si ve 34 de 100,
+          el fichero trae 34. El CSV sale con punto y coma y con BOM, así que se abre directo en el
+          Excel español sin el paso de importar texto, y también vale para subirlo a Airtable si
+          algún día quieren tener las dos cosas.
+        </P>
+        <P>
+          Las pantallas y el fichero comparten las mismas funciones de filtrado, que están en{' '}
+          <C>lib/ios/filters.ts</C> y tienen tests. Es la precaución que evita el fallo clásico de
+          esto: una descarga que se olvida de un filtro y entrega más filas de las que se pidieron.
+        </P>
+        <P>
+          <b className="text-ink">Importar de SABI.</b> En Sourcing, vista Empresas, hay un botón
+          para subir un export de SABI tal cual sale. Una hoja es una empresa, así que un fichero de
+          una y un fichero de doscientas entran por el mismo sitio.
+        </P>
+        <UL>
+          <li>
+            Empareja por nombre, así que subir el mismo fichero dos veces no duplica nada: la segunda
+            vez dirá &quot;sin cambios&quot;.
+          </li>
+          <li>
+            Las ventas y el EBITDA vienen en euros de las cuentas depositadas y se guardan en
+            millones. Un año sin datos se queda en blanco, nunca en cero.
+          </li>
+          <li>
+            El arquetipo se asigna por el CNAE, y solo cuando un único arquetipo reclama ese código.
+            Media biblioteca comparte el 7120, así que ahí lo deja en blanco para que lo asigne una
+            persona. Preferimos un hueco visible a un arquetipo equivocado con aire de certeza.
+          </li>
+          <li>
+            Nunca sobrescribe un campo con un vacío, que es su regla A17. Una nota escrita a mano no
+            se pisa; una cifra de SABI sí gana a la estimación de un directorio web.
+          </li>
+        </UL>
+        <Note>
+          Su propio documento dice que este paso no lo puede hacer Airtable: para el Excel de SABI
+          &quot;la lectura, el mapeo y la vista previa los hace el Company Import Agent (Claude Code
+          / Cowork por la API de Airtable)&quot;. Es decir, en su diseño hace falta un segundo
+          producto para cargar la fuente principal de originación. Aquí es un botón.
+        </Note>
+      </>
+    ),
+  },
+  {
     id: 'datos',
     title: 'Cómo recargar los datos del Excel',
     hint: 'Catálogo: 100, 140, 486, 173, 22, 258',

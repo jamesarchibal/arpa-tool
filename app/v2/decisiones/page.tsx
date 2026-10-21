@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import { getIosDecisions } from '@/lib/ios/db';
 import { STAGE_LABEL } from '@/lib/ios/lists';
+import ExportCsv from '../_export-button';
 import { Pill, Stat } from '../_ui';
 
 export const dynamic = 'force-dynamic';
@@ -35,6 +36,12 @@ export default async function DecisionesPage() {
         <Stat label="Decisiones" value={String(decisions.length)} hint="las 200 últimas" />
         <Stat label="Avances" value={String(advances)} hint="etapas movidas" />
         <Stat label="Bloqueadas" value={String(blocked)} hint="intento con gate cerrado" />
+      </div>
+
+      {/* The file carries up to 1000 rows and the list 200, so it is labelled as
+          the whole log and not as "what you are seeing". */}
+      <div className="mb-4 flex justify-end">
+        <ExportCsv kind="decisiones" label="CSV del histórico" />
       </div>
 
       {decisions.length === 0 ? (

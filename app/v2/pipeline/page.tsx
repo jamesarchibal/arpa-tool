@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import { getIosLongList, getIosProjects, getIosTheses } from '@/lib/ios/db';
 import { STAGES, STAGE_LABEL } from '@/lib/ios/lists';
+import ExportCsv from '../_export-button';
 import { DASH, Pill } from '../_ui';
 import NewProject from './_new-project';
 
@@ -42,14 +43,17 @@ export default async function PipelinePage() {
           {projects.length} proyecto{projects.length === 1 ? '' : 's'} · {live.length} vivo
           {live.length === 1 ? '' : 's'} · la etapa solo cambia en el gate
         </p>
-        <NewProject
-          theses={theses.map((t) => ({ id: t.id, code: t.code, name: t.name }))}
-          companies={companies.map((c) => ({
-            id: c.id,
-            name: c.name,
-            subsector: c.subsector,
-          }))}
-        />
+        <div className="flex items-center gap-2">
+          <ExportCsv kind="pipeline" label="CSV del pipeline" />
+          <NewProject
+            theses={theses.map((t) => ({ id: t.id, code: t.code, name: t.name }))}
+            companies={companies.map((c) => ({
+              id: c.id,
+              name: c.name,
+              subsector: c.subsector,
+            }))}
+          />
+        </div>
       </div>
 
       <div className="grid gap-3 lg:grid-cols-3 xl:grid-cols-3">

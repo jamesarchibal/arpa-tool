@@ -1,8 +1,11 @@
 import Link from 'next/link';
 
 import { getIosArchetypes, getIosLongList, getIosSources } from '@/lib/ios/db';
+import { filterArchetypes, filterCompanies } from '@/lib/ios/filters';
+import ExportCsv from '../_export-button';
 import FilterBar from '../_filter-bar';
 import { DASH, Pill, Stat } from '../_ui';
+import ImportSabi from './_import';
 
 export const dynamic = 'force-dynamic';
 
@@ -94,11 +97,8 @@ export default async function SourcingPage({ searchParams }: { searchParams?: Pa
 
       {view === 'arquetipos' ? (
         (() => {
-          const rows = archetypes.filter(
-            (a) =>
-              (!params.subsector || a.subsector === params.subsector) &&
-              (!params.role || a.pe_role === params.role),
-          );
+          // Shared with `/v2/export` so the file always matches the list.
+          const rows = filterArchetypes(archetypes, params);
           return (
             <>
               <FilterBar
@@ -106,6 +106,7 @@ export default async function SourcingPage({ searchParams }: { searchParams?: Pa
                 params={{ ...params, v: 'arquetipos' }}
                 total={archetypes.length}
                 showing={rows.length}
+                right={<ExportCsv kind="arquetipos" params={params} />}
                 filters={[
                   {
                     name: 'subsector',
@@ -163,20 +164,17 @@ export default async function SourcingPage({ searchParams }: { searchParams?: Pa
 
       {view === 'empresas' ? (
         (() => {
-          const rows = companies.filter(
-            (c) =>
-              (!params.subsector || c.subsector === params.subsector) &&
-              (!params.province || c.province === params.province) &&
-              (!params.source || c.source === params.source) &&
-              (!params.archetype || c.archetype === params.archetype),
-          );
+          // Shared with `/v2/export` so the file always matches the list.
+          const rows = filterCompanies(companies, params);
           return (
             <>
+              <ImportSabi />
               <FilterBar
                 base="/v2/sourcing"
                 params={{ ...params, v: 'empresas' }}
                 total={companies.length}
                 showing={rows.length}
+                right={<ExportCsv kind="empresas" params={params} />}
                 filters={[
                   {
                     name: 'subsector',
@@ -254,43 +252,50 @@ export default async function SourcingPage({ searchParams }: { searchParams?: Pa
       ) : null}
 
       {view === 'fuentes' ? (
-        <div className="overflow-x-auto rounded-lg border border-border bg-bg-card">
-          <table className="w-full min-w-[700px] text-sm">
-            <thead>
-              <tr className="border-b border-border text-left font-mono text-[10px] uppercase tracking-[0.08em] text-ink-faint">
-                <th className="px-3 py-2">Fuente</th>
-                <th className="px-3 py-2">Tipo</th>
-                <th className="px-3 py-2 text-right">Empresas</th>
-                <th className="px-3 py-2">Notas</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sources.map((s) => (
-                <tr key={s.id} className="border-b border-border last:border-0 hover:bg-bg-elevated">
-                  <td className="px-3 py-2 font-medium text-ink">
-                    {s.url ? (
-                      <a
-                        href={s.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="hover:text-brand hover:underline"
-                      >
-                        {s.name}
-                      </a>
-                    ) : (
-                      s.name
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-xs text-ink-mute">{s.source_type ?? DASH}</td>
-                  <td className="px-3 py-2 text-right font-mono text-xs text-ink">
-                    {companies.filter((c) => c.source === s.name).length}
-                  </td>
-                  <td className="px-3 py-2 text-xs text-ink-faint">{s.notes ?? DASH}</td>
+        <>
+          {/* The 22 sources have nothing to filter by, so this view gets the
+              download link on its own instead of inside a FilterBar. */}
+          <div className="mb-4 flex justify-end">
+            <ExportCsv kind="fuentes" />
+          </div>
+          <div className="overflow-x-auto rounded-lg border border-border bg-bg-card">
+            <table className="w-full min-w-[700px] text-sm">
+              <thead>
+                <tr className="border-b border-border text-left font-mono text-[10px] uppercase tracking-[0.08em] text-ink-faint">
+                  <th className="px-3 py-2">Fuente</th>
+                  <th className="px-3 py-2">Tipo</th>
+                  <th className="px-3 py-2 text-right">Empresas</th>
+                  <th className="px-3 py-2">Notas</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {sources.map((s) => (
+                  <tr key={s.id} className="border-b border-border last:border-0 hover:bg-bg-elevated">
+                    <td className="px-3 py-2 font-medium text-ink">
+                      {s.url ? (
+                        <a
+                          href={s.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="hover:text-brand hover:underline"
+                        >
+                          {s.name}
+                        </a>
+                      ) : (
+                        s.name
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-ink-mute">{s.source_type ?? DASH}</td>
+                    <td className="px-3 py-2 text-right font-mono text-xs text-ink">
+                      {companies.filter((c) => c.source === s.name).length}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-ink-faint">{s.notes ?? DASH}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       ) : null}
     </>
   );

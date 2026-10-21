@@ -1,4 +1,6 @@
 import { getIosTheses } from '@/lib/ios/db';
+import { CROSS_SECTOR, filterTheses } from '@/lib/ios/filters';
+import ExportCsv from '../_export-button';
 import FilterBar from '../_filter-bar';
 import { DASH, Pill, Stat } from '../_ui';
 
@@ -18,16 +20,8 @@ export default async function TesisPage({ searchParams }: { searchParams?: Param
   const params = searchParams ?? {};
   const all = await getIosTheses();
 
-  const rows = all.filter(
-    (t) =>
-      (!params.scope || t.scope === params.scope) &&
-      (!params.strategy || t.primary_strategy === params.strategy) &&
-      (!params.priority || t.priority === params.priority) &&
-      (!params.subsector ||
-        params.subsector === '__cross' ||
-        t.subsectors.includes(params.subsector)) &&
-      (params.subsector !== '__cross' || t.subsectors.length === 0),
-  );
+  // Shared with `/v2/export` so the file always matches the list.
+  const rows = filterTheses(all, params);
 
   const tally = (pick: (t: typeof all[number]) => string | null) => {
     const out: Record<string, number> = {};
@@ -66,6 +60,7 @@ export default async function TesisPage({ searchParams }: { searchParams?: Param
         params={params}
         total={all.length}
         showing={rows.length}
+        right={<ExportCsv kind="tesis" params={params} />}
         filters={[
           {
             name: 'scope',
@@ -90,7 +85,7 @@ export default async function TesisPage({ searchParams }: { searchParams?: Param
             name: 'subsector',
             label: 'Subsector',
             options: [
-              { value: '__cross', label: `Solo cross-sector (${crossSector})` },
+              { value: CROSS_SECTOR, label: `Solo cross-sector (${crossSector})` },
               ...Object.entries(subsectorCounts)
                 .sort((a, b) => a[0].localeCompare(b[0], 'es'))
                 .map(([k, n]) => ({ value: k, label: `${k} (${n})` })),

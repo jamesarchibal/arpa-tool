@@ -1,6 +1,8 @@
 import { getIosIndustries } from '@/lib/ios/db';
+import { filterIndustries } from '@/lib/ios/filters';
 import { INDUSTRY_CRITERIA } from '@/lib/ios/industries';
 import { TIER_LABEL } from '@/lib/ios/lists';
+import ExportCsv from '../_export-button';
 import FilterBar from '../_filter-bar';
 import { DASH, Rating, Stat, TierPill } from '../_ui';
 
@@ -26,12 +28,8 @@ export default async function IndustriasPage({
   const params = searchParams ?? {};
   const all = await getIosIndustries();
 
-  const rows = all.filter(
-    (r) =>
-      (!params.tier || r.tier === params.tier) &&
-      (!params.industry || r.industry === params.industry) &&
-      (!params.sector || r.sector === params.sector),
-  );
+  // Shared with `/v2/export` so the file always matches the list.
+  const rows = filterIndustries(all, params);
 
   const count = (pick: (r: typeof all[number]) => string) => {
     const out: Record<string, number> = {};
@@ -56,6 +54,7 @@ export default async function IndustriasPage({
         params={params}
         total={all.length}
         showing={rows.length}
+        right={<ExportCsv kind="industrias" params={params} />}
         filters={[
           {
             name: 'tier',

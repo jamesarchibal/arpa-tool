@@ -24,6 +24,7 @@ export default function FilterBar({
   filters,
   total,
   showing,
+  right,
 }: {
   /** The page's own path, e.g. `/v2/industrias`. */
   base: string;
@@ -31,6 +32,8 @@ export default function FilterBar({
   filters: FilterSpec[];
   total: number;
   showing: number;
+  /** The download link, passed in from the server page. */
+  right?: React.ReactNode;
 }) {
   const router = useRouter();
   const active = filters.filter((f) => params[f.name]).length;
@@ -78,6 +81,7 @@ export default function FilterBar({
           Limpiar
         </button>
       ) : null}
+      {right}
     </div>
   );
 }
