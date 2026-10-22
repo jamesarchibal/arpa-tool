@@ -6,7 +6,18 @@ export async function middleware(request: NextRequest) {
   const cookie = request.cookies.get(SESSION_COOKIE)?.value ?? '';
   const expected = await sessionToken();
 
-  if (constantTimeEqual(cookie, expected)) return NextResponse.next();
+  if (constantTimeEqual(cookie, expected)) {
+    // The front door is V2. ARPA should land on one tool instead of a choice
+    // between two, so the bare root forwards instead of rendering V1's
+    // Originación. Only the root: V1's own URLs still answer for us, they just
+    // have no link pointing at them any more.
+    if (request.nextUrl.pathname === '/') {
+      const v2 = request.nextUrl.clone();
+      v2.pathname = '/v2';
+      return NextResponse.redirect(v2);
+    }
+    return NextResponse.next();
+  }
 
   const url = request.nextUrl.clone();
   const next = `${request.nextUrl.pathname}${request.nextUrl.search}`;

@@ -132,7 +132,7 @@ built as **V2** next to V1, with a switch in the top bar.
 | Instruction | State |
 | --- | --- |
 | Do not touch the current version | **permanente**. The only edit to V1 is one `<VersionSwitch>` in `app/_topnav.tsx`. New routes `app/v2/**`, new tables `ios_*`, new lib `lib/ios/*`. V1's row counts were 2 / 2 / 21 / 3 before and after. |
-| Two tabs on `/arpa` so both can be seen side by side | **hecho**. `app/_version-switch.tsx`, imported by `app/_topnav.tsx` and `app/v2/layout.tsx`. |
+| Two tabs on `/arpa` so both can be seen side by side | **revertido el 22-oct**. Sirvió mientras comparábamos. Ahora ARPA entra en una sola herramienta: la raíz redirige a `/v2` en `middleware.ts` y `app/_version-switch.tsx` está borrado. V1 responde en sus URLs pero no tiene puerta. |
 | Library with their real content | **hecho**. 100 subsectors, 140 theses, 486 thesis-subsector links, 173 archetypes, 22 sources, 258 companies, 0 rejects. `scripts/ios-seed.ts`, idempotent, verified by running it twice. |
 | The stage only changes through an approved gate decision | **hecho**. `app/v2/actions.ts` exports no `setStage`, and `ios_projects.stage` has exactly one writer, `ios_record_gate_decision`. |
 | Portfolio, KPIs, DD Tracker, Valuation cases, Value Creation Initiatives, role permissions, the advisor form, Financials by period, the AI agents | **fuera de alcance** for this version, agreed before building. |

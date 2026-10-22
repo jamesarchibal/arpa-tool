@@ -219,12 +219,13 @@ La forma justa de comparar no es discutir, es cargar P1 a P6 en las dos opciones
 y pasar las 27.
 
 Hecho. Los fixtures están cargados en V2 y el estado real de las 27, medido y no
-estimado, está en **`docs/qa-v9.md`**, una fila por comprobación y con sus
-palabras en la columna de la izquierda. El resumen:
+estimado, está en la pantalla **`/v2/qa`**, una fila por comprobación, con sus
+palabras en la columna de la izquierda y un enlace al fixture que demuestra cada
+una. El resumen:
 
 - **8 se pasan hoy enteras**: QA-03, 05, 06, 07, 10, 18, 19, 24.
-- **11 están a medias**, con la parte que falta dicha por su nombre.
-- **8 no se pueden pasar** porque dependen de algo que acordamos dejar fuera.
+- **12 están a medias**, con la parte que falta dicha por su nombre.
+- **7 no se pueden pasar** porque dependen de algo que dejamos fuera de alcance.
 
 Lo que esa tabla deja ver es que las que se pasan son casi todas reglas (gates,
 vocabulario, orden de etapas, enlaces, recuentos de la carga) y las que no son

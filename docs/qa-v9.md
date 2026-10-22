@@ -31,10 +31,15 @@ es carácter por carácter el que su hoja predice en la columna `Expected`.
 ## Resumen
 
 - **8 de 27 se pueden pasar hoy enteras**: QA-03, 05, 06, 07, 10, 18, 19, 24.
-- **11 están a medias**, con la parte que falta dicha por su nombre: QA-01, 02, 04,
-  09, 11, 12, 13, 16, 20, 21, 22.
-- **8 no se pueden pasar** porque dependen de algo que acordamos dejar fuera:
-  QA-08, 14, 15, 17, 23, 25, 26, 27.
+- **12 están a medias**, con la parte que falta dicha por su nombre: QA-01, 02, 04,
+  09, 11, 12, 13, 15, 16, 20, 21, 22.
+- **7 no se pueden pasar** porque dependen de algo que dejamos fuera de alcance:
+  QA-08, 14, 17, 23, 25, 26, 27.
+
+Esta tabla se mantiene a mano, así que la fuente de verdad es la pantalla
+**`/v2/qa`**, que deriva los tres recuentos de sus propias filas y enlaza cada
+comprobación con el fixture que la demuestra. Si los números no coinciden, manda
+la pantalla y hay que corregir este fichero.
 
 La que más nos importa es **QA-11**, porque es la regla que da sentido al sistema.
 Su mitad de gate está cumplida y, además, cumplida en tres sitios: el panel no
@@ -60,7 +65,7 @@ Partner no está, porque no hay roles.
 | QA-12 | Automations | A12 pone Passed, copia el motivo y crea una tarea de Data Quality cuando falta el motivo. | **A medias, y a propósito.** Pass pone `project_status = Passed`, guarda la etapa en la que murió y copia el motivo. Pero el motivo es obligatorio en el formulario, así que no hay nada que reclamar después. Preferimos impedir el dato que falta a crear una tarea para pedirlo. Si prefiere su versión, se cambia. |
 | QA-13 | Automations | A13 pone Monitor + Review Date +90; A14 crea la tarea de revisión cuando vence. | **A medias.** Monitor pone `Monitor` y la fecha de revisión a 90 días. No hay tarea: "Mi trabajo" lista los próximos pasos vencidos, que hace el mismo trabajo sin tabla de tareas. P2 tiene la fecha ya pasada para que se vea. |
 | QA-14 | Automations | A18 deja exactamente un caso de valoración Current por proyecto. | **No.** Valuation por casos está fuera de alcance. |
-| QA-15 | Automations | A17 cuenta bien la previsualización de un fichero reimportado y no crea una segunda compañía al coincidir NIF o dominio. | **No en V2.** V1 tiene importador con detección de duplicados, pero no sus contadores de previsualización. P4 no se carga, y se dice por qué al ejecutar el script. |
+| QA-15 | Automations | A17 cuenta bien la previsualización de un fichero reimportado y no crea una segunda compañía al coincidir NIF o dominio. | **A medias desde el 21-oct.** V2 ya tiene el importador de SABI: no duplica, porque el nombre normalizado tiene índice único, y nunca sobrescribe un campo con un vacío, que es su regla. Lo que no tiene son sus contadores de previsualización antes de escribir, ni el cruce por NIF o dominio. P4 no se carga. |
 | QA-16 | Automations | A07 crea 9 ítems de DD con Required en 4; A08 bloqueado mientras quede un Required abierto. | **A medias, con un muñón a la vista.** El gate de Full Due Diligence exige `open_required_dd_items = 0`, pero ese número lo teclea una persona porque no hay DD Tracker. Es un muñón visible, no oculto. |
 | QA-17 | AI | Toda salida de IA entra con AI status Needs Review y ningún paso de IA pone Approved. | **No.** No hay agentes en V2. La columna `ai_enrichment_status` existe y vale `Not Run` en las 258 compañías. |
 | QA-18 | Dashboards | El Partner Cockpit muestra decisiones pendientes, paradas y revisiones de monitor. | **Sí, en equivalente.** La pantalla "Mi trabajo" muestra cuatro listas derivadas: gates esperando decisión, documentos In Review, próximos pasos vencidos, y gates cerrados con lo que les falta en la columna de la derecha. No es su maquetación. Ninguna de las cuatro es un campo que alguien mantenga. |

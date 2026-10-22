@@ -6,6 +6,13 @@ Contra su correo del 20-oct-2026, 20:04 (cc Marc Palà, Eduard Artau), asunto
 Su pregunta real era una sola: **Airtable o desarrollo propio.** Todo lo demás del
 correo es el diseño. El borrador contesta eso primero y deja lo demás detrás.
 
+**El borrador largo de abajo NO es el que James eligió.** Decidió no contestar la
+pregunta por correo y emplazar a una reunión, por dos razones buenas: las cuatro
+peticiones solo importan si ya han decidido, y quien escribe "desarrollo propio" por
+correo es el que cobra por construirlo, así que pesa más dicho en persona. El correo
+corto va en el hilo; esto se queda como el guion de lo que hay que defender EN la
+reunión, que es donde se gasta el argumento del gate.
+
 Tres cosas antes de enviar:
 
 1. Él escribe en catalán. El borrador está en castellano porque el resto de la
@@ -30,8 +37,8 @@ Antes del argumento, el dato. En vez de opinar, hemos cargado tus 6 fixtures
 Estado medido, no estimado:
 
 - **8 se pasan hoy enteras**: QA-03, 05, 06, 07, 10, 18, 19, 24.
-- **11 están a medias**, y en el documento digo de cada una qué mitad falta.
-- **8 no se pasan** porque dependen de algo que dejamos fuera de alcance a propósito.
+- **12 están a medias**, y en la pantalla digo de cada una qué mitad falta.
+- **7 no se pasan** porque dependen de algo que dejamos fuera de alcance a propósito.
 
 Lo que esa tabla deja ver importa más que el recuento: **las que se pasan son casi
 todas reglas** (los gates, el vocabulario, el orden de las etapas, los enlaces, la
@@ -91,10 +98,9 @@ propia regla A17. Está probado con dos exports reales de SABI.
    `industry` / `sector` / `subsector`** para hablar tu idioma. Es mecánico y evita
    tres meses de malentendidos.
 
-Te adjunto las 27 comprobaciones una por una con tus palabras en la columna de la
-izquierda (`qa-v9.md`), y el análisis completo de Airtable contra propio con los
-argumentos en contra incluidos (`airtable-vs-propio.md`). Puedes entrar y romperlo aquí:
-joblanders.ai/arpa/v2
+Las 27 comprobaciones están una por una, con tus palabras en la columna de la izquierda
+y un enlace al caso de prueba que demuestra cada una, en joblanders.ai/arpa/v2/qa. No es
+un adjunto: entras, lees la fila, haces clic y lo ves pasar o fallar.
 
 Un abrazo,
 James
