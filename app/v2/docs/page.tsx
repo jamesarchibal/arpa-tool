@@ -1,6 +1,12 @@
 import { TIER_FLOOR } from '@/lib/ios/industries';
 import { gateReady, type GateFacts } from '@/lib/ios/gates';
 import { GATE_ALLOWED, STAGE_LABEL, STAGES } from '@/lib/ios/lists';
+import {
+  KILL_CRITERIA,
+  MONITOR_AT,
+  PROCEED_AT,
+  SCORING_MODELS,
+} from '@/lib/ios/scoring';
 import { DASH } from '../_ui';
 
 /**
@@ -187,6 +193,45 @@ const SECTIONS: { id: string; title: string; hint: string; body: React.ReactNode
           <b className="text-ink">Falta una pieza.</b> Su automatización A16 pide además que quien
           aprueba sea Partner. V2 no tiene roles, así que <i>Quién decide</i> es texto libre. Lo
           arreglan los pasos 1 y 2 de Entrega.
+        </P>
+      </>
+    ),
+  },
+  {
+    id: 'puntuacion',
+    title: 'Cómo puntuar un proyecto',
+    hint: 'Las tres puertas, 1 a 5',
+    body: (
+      <>
+        <P>
+          Proyecto, pestaña <i>Puntuación</i>. Son{' '}
+          {SCORING_MODELS.reduce((n, M) => n + M.criteria.length, 0)} criterios repartidos en tres
+          puertas, cada uno de 1 a 5 y con el peso de su hoja <C>Scoring_Model</C>. La nota se
+          recalcula al pulsar, antes de guardar.
+        </P>
+        <UL>
+          {SCORING_MODELS.map((M) => (
+            <li key={M.id}>
+              <b className="text-ink">{M.name}</b> ({STAGE_LABEL[M.stage]}). {M.criteria.length}{' '}
+              criterios y {KILL_CRITERIA.filter((k) => k.model === M.id).length} criterios de
+              descarte. {M.question}
+            </li>
+          ))}
+        </UL>
+        <P>
+          Desde {PROCEED_AT} la puerta dice seguir, desde {MONITOR_AT} seguimiento, y por debajo
+          descartar. Un criterio de descarte marcado deja la puerta en descarte sea cual sea la
+          nota. Para dejar un criterio sin puntuar, pulse otra vez el número que ya tiene.
+        </P>
+        <Note>
+          La nota no mueve la etapa. Un 40 no cierra un gate y un 100 no lo abre, porque su fórmula{' '}
+          <C>Projects.Gate Ready?</C> lee el estado de los documentos y nunca una puntuación. Lo que
+          hace una nota mala es obligar a justificar por escrito el siguiente avance.
+        </Note>
+        <P>
+          Una puerta no da nota hasta que sus criterios están todos puntuados, que es su regla tal
+          cual. Si falla, la pantalla propone uno de los doce motivos de descarte del v9: lo propone
+          y nada más, el motivo de verdad se elige al registrar la decisión.
         </P>
       </>
     ),
