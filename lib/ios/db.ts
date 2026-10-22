@@ -303,6 +303,12 @@ export interface IosDocument {
   approved_at: string | null;
   approved_by: string | null;
   updated_at: string;
+  // The attached file, if any. `url` means something different and both can be
+  // set: `url` links the paper wherever it already lives, these three are the
+  // copy we hold while SharePoint is out of reach.
+  storage_path: string | null;
+  file_name: string | null;
+  file_size: number | null;
 }
 
 export interface IosPerimeterRow {

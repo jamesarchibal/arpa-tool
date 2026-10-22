@@ -5,20 +5,34 @@ import { useState, useTransition } from 'react';
 import { CONFIDENTIALITY, DOC_STATUS, DOC_TYPES } from '@/lib/ios/lists';
 import { PENDING_MICROSOFT, Pending } from '../../_pending';
 import { saveIosDocument, updateIosProject } from '../../actions';
+import DocumentFile from './_file';
 
 /**
- * The deliverables, each row editable in place, and the folder they live in.
+ * The deliverables, each row editable in place, the folder they live in, and the
+ * file itself.
  *
  * The status column is the one that matters: `Approved` is what opens a gate, so
  * this table is where a closed gate gets unblocked. A new version is a new row,
  * which is why the old one should be set to `Superseded` rather than edited: the
  * gate reads the latest non-Superseded document per type.
  *
- * The files themselves are NOT here and will not be. The original lives in
- * SharePoint, where ARPA already has the permissions, the versioning and the
- * search; this screen keeps the folder it lives in and, per row, the link. Two
- * copies of a document means two versions, and the good one is always the other
- * one. `docs/entrega-arpa.md`, step 5.
+ * Each row has three ways of pointing at the paper, and they are not redundant:
+ *
+ *   Carpeta en SharePoint  where all of a project's papers live. One per project.
+ *   URL                    a link to this paper, if it already lives somewhere.
+ *   Subir fichero          a copy held here, for a paper that lives nowhere yet.
+ *
+ * The third one is new and it contradicts what this file used to say. The old
+ * argument, that the original belongs in SharePoint and a second copy means two
+ * versions, is still right. It just assumed SharePoint was reachable, and it is
+ * not: the Microsoft app registration is step 1 of `docs/entrega-arpa.md` and it
+ * does not exist yet, so "the file lives in SharePoint" meant in practice that a
+ * freshly written QSS could not be attached at all. Pasting a URL only helps a
+ * document that is already somewhere.
+ *
+ * So files land in a private Supabase bucket until Graph can take over, and then
+ * the migration is to push each one into the project folder and keep the link in
+ * `url`. Nothing in the schema changes on that day.
  */
 export default function Documents({
   projectId,
@@ -36,6 +50,9 @@ export default function Documents({
     confidentiality: string;
     url: string | null;
     approved_at: string | null;
+    storage_path: string | null;
+    file_name: string | null;
+    file_size: number | null;
   }[];
 }) {
   const [pending, start] = useTransition();
@@ -120,7 +137,6 @@ export default function Documents({
           </a>
         ) : null}
         <Pending needs={PENDING_MICROSOFT}>Crear la carpeta</Pending>
-        <Pending needs={PENDING_MICROSOFT}>Subir fichero</Pending>
       </form>
 
       {adding ? (
@@ -207,6 +223,13 @@ export default function Documents({
                 >
                   Guardar
                 </button>
+                <DocumentFile
+                  documentId={d.id}
+                  projectId={projectId}
+                  storagePath={d.storage_path}
+                  fileName={d.file_name}
+                  fileSize={d.file_size}
+                />
                 {d.approved_at ? (
                   <span className="text-[11px] text-emerald-700">
                     aprobado {d.approved_at.slice(0, 10)}

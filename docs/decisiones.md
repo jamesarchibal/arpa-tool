@@ -242,12 +242,53 @@ proyecto. Un "Avanzar" de un clic en una lista es exactamente el desplegable que
 V2 existe para quitar.
 
 Y la parte de Microsoft. No tenemos el registro de aplicación en su tenant, así
-que los cuatro botones que dependen de él están **en su sitio real, visibles y
-desactivados**, cada uno diciendo qué le falta: crear la carpeta del proyecto y
-subir un fichero (pestaña Documentos), pasar el próximo paso a Outlook y traer
-correos y notas de reunión (pestaña Resumen). El fichero no se sube aquí ni se
-subirá: el original vive en SharePoint, donde ARPA ya tiene los permisos, el
-versionado y la búsqueda. Lo que guardamos es la carpeta
+que los botones que dependen de él están **en su sitio real, visibles y
+desactivados**, cada uno diciendo qué le falta: crear la carpeta del proyecto
+(pestaña Documentos), pasar el próximo paso a Outlook y traer correos y notas de
+reunión (pestaña Resumen). Lo que guardamos mientras tanto es la carpeta
 (`ios_projects.sharepoint_folder_url`, hoy escrita a mano, mañana por Graph sin
-cambiar el esquema) y, por documento, el enlace. Dos copias de un documento son
-dos versiones, y la buena es siempre la otra.
+cambiar el esquema) y, por documento, el enlace.
+
+### Los ficheros sí se suben, y eso contradice lo que pone justo arriba
+
+La decisión anterior decía que el fichero no se sube aquí ni se subiría, porque
+el original vive en SharePoint, donde ARPA ya tiene los permisos, el versionado
+y la búsqueda, y dos copias de un documento son dos versiones. El argumento
+sigue siendo cierto. Lo que le faltaba es que SharePoint todavía no se puede
+tocar: el registro de aplicación es el paso 1 de la entrega y no existe, así que
+"el fichero vive en SharePoint" significaba en la práctica **que no había manera
+de adjuntar nada**. Pegar una URL solo sirve para un papel que ya está en algún
+sitio, y el QSS que alguien acaba de escribir no lo está.
+
+Así que cada entregable tiene ahora tres maneras de señalar al papel, y ninguna
+sobra:
+
+- **Carpeta en SharePoint**, una por proyecto, donde viven todos.
+- **URL**, el enlace a este papel si ya está en algún sitio.
+- **Subir fichero**, una copia que guardamos nosotros mientras tanto.
+
+Tres detalles que no son cosméticos:
+
+El bucket (`ios-documentos`) es **privado**. Nada se lee por URL pública. La
+descarga pasa por `/v2/documentos/[id]/descargar`, que firma un enlace que
+caduca en 60 segundos. Un bucket público haría una LOI legible por cualquiera
+que acertase la ruta, y esto son papeles de operaciones.
+
+La subida **no pasa por Vercel**. El navegador pide una URL firmada y manda los
+bytes directo a Supabase, porque el cuerpo de una petición en Vercel se corta en
+4,5 MB y una LOI escaneada o un modelo financiero lo pasan de sobra. Una acción
+de servidor que recibiera el fichero funcionaría en pruebas con un PDF pequeño y
+fallaría justo con los documentos que importan. El límite real es el del bucket,
+50 MB; por encima, el botón manda a pegar el enlace.
+
+Son **tres columnas, no una tabla aparte**. Un entregable tiene como mucho un
+fichero: la segunda versión del QSS es una fila nueva en versión 2, que es como
+funciona su modelo y lo que lee el gate (el último no Superseded de cada tipo).
+Una tabla de adjuntos dejaría que una fila tuviera dos ficheros y haría que
+"¿cuál aprobó el socio?" no tuviera respuesta.
+
+El día que llegue el tenant, la migración es subir cada `storage_path` a la
+carpeta del proyecto y dejar el enlace en `url`. El esquema no cambia.
+
+Lo que sigue sin poderse hacer es **leer desde ARPA lo que ya está en
+SharePoint**. Eso necesita Graph y no tiene atajo.

@@ -247,9 +247,9 @@ const SECTIONS: { id: string; title: string; hint: string; body: React.ReactNode
         <OL>
           <li>Proyecto, pestaña Documentos.</li>
           <li>
-            Elija el tipo de los quince del v9 (QSS, OM, PFR, IC, LOI, DD Summary, FIM y el resto),
-            ponga el título y, si el fichero vive en SharePoint o en una carpeta compartida, pegue el
-            enlace.
+            Elija el tipo de los quince del v9 (QSS, OM, PFR, IC, LOI, DD Summary, FIM y el resto) y
+            ponga el título. Si el papel ya vive en SharePoint o en una carpeta compartida, pegue el
+            enlace; si no vive en ninguna parte todavía, súbalo con <C>Subir fichero</C>.
           </li>
           <li>
             El estado recorre Not Started, Drafting, In Review, Approved, Rejected y Superseded.
@@ -269,28 +269,36 @@ const SECTIONS: { id: string; title: string; hint: string; body: React.ReactNode
   {
     id: 'conexiones',
     title: 'SharePoint, Outlook y el correo',
-    hint: 'La carpeta sí, el fichero no',
+    hint: 'Tres maneras de llegar al papel',
     body: (
       <>
         <P>
-          <b className="text-ink">El fichero no se sube aquí, y no se subirá.</b> El original vive en
-          SharePoint, donde ya están los permisos, el versionado y la búsqueda. Dos copias de un
-          documento son dos versiones, y la buena es siempre la otra. Lo que guarda esta herramienta
-          es el camino de vuelta: la carpeta del proyecto, arriba de la pestaña Documentos, y por
-          cada documento su enlace.
+          En la pestaña Documentos cada entregable tiene tres maneras de señalar al papel, y ninguna
+          sobra. <b className="text-ink">Carpeta en SharePoint</b>, una por proyecto, donde viven
+          todos. <b className="text-ink">URL</b>, el enlace a este papel si ya está en algún sitio.
+          Y <b className="text-ink">Subir fichero</b>, para el papel que todavía no está en ninguna
+          parte, como el QSS que alguien acaba de escribir.
         </P>
         <P>
-          Hoy la carpeta se pega a mano y el botón <C>Abrir carpeta</C> la abre en una pestaña nueva.
-          Cuatro botones más están en su sitio y desactivados, porque falta el registro de
-          aplicación en el tenant de ARPA: crear la carpeta del proyecto y subir un fichero, en
-          Documentos, y pasar el próximo paso a Outlook y traer correos y notas de reunión, en
-          Resumen. Cada uno dice al pasar el ratón qué le falta.
+          Lo subido se guarda <b className="text-ink">en privado</b>: el enlace{' '}
+          <C>Descargar</C> se firma en el momento y caduca a los sesenta segundos, así que no hay
+          ninguna dirección que se pueda reenviar. <C>Sustituir</C> cambia el fichero y borra el
+          anterior, <C>Quitar</C> lo deja sin fichero. El tope son 50 MB por fichero; por encima,
+          mejor pegar el enlace.
+        </P>
+        <P>
+          Lo que todavía no se puede es <b className="text-ink">hablar con SharePoint</b>, porque
+          falta el registro de aplicación en el tenant de ARPA. Por eso quedan tres botones en su
+          sitio y desactivados: crear la carpeta del proyecto, en Documentos, y pasar el próximo
+          paso a Outlook y traer correos y notas de reunión, en Resumen. Cada uno dice al pasar el
+          ratón qué le falta. Mientras tanto, la carpeta se pega a mano y <C>Abrir carpeta</C> la
+          abre en una pestaña nueva.
         </P>
         <Note>
-          Están desactivados a propósito y no escondidos. Un botón que no hace nada al pulsarlo es
-          peor que un hueco, porque se dejan de creer los demás botones. Cuando la conexión exista,
-          cada hueco se convierte en el botón de verdad y la carpeta se rellena sola, sin cambiar
-          nada de lo que ya esté escrito.
+          Guardar aquí los ficheros es provisional y se dice a propósito. El original debería vivir
+          en SharePoint, donde ARPA ya tiene los permisos, el versionado y la búsqueda. El día que
+          exista la conexión, lo subido se empuja a la carpeta del proyecto y el documento se queda
+          con el enlace, sin que haya que rehacer nada de lo escrito.
         </Note>
       </>
     ),

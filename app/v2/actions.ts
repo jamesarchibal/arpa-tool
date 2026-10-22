@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import { createClient } from '@/lib/supabase/server';
 import { getGateFacts } from '@/lib/ios/db';
+import { MAX_FILE_BYTES, storageKey } from '@/lib/ios/files';
 import {
   advanceTarget,
   decisionType,
@@ -243,6 +244,145 @@ export async function setIosDocumentStatus(input: unknown): Promise<ActionResult
   revalidatePath('/v2/pipeline');
   revalidatePath('/v2');
   return { ok: true, message: `Documento en ${doc_status}` };
+}
+
+/**
+ * Attaching the actual file.
+ *
+ * Three steps, not one, and the middle one does not pass through Vercel.
+ *
+ *   1. `createIosDocumentUpload` signs a one-shot URL for a key it chose itself.
+ *   2. The browser PUTs the file straight to Supabase storage.
+ *   3. `attachIosDocumentFile` records the key on the document row.
+ *
+ * The detour exists because a Vercel request body is capped at 4,5 MB and a
+ * scanned LOI or a financial model clears that easily, so a server action that
+ * took the `File` would fail on exactly the documents that matter. The signed
+ * URL has no such limit: the bucket's own 50 MB cap is the only one.
+ *
+ * The key is built on the server from the project and document ids, never from
+ * anything the client sends beyond the file name, and `safeFileName` strips the
+ * separators out of that. So a caller cannot aim an upload at another project's
+ * folder even by hand-crafting the request.
+ *
+ * Step 3 can be lost (a closed tab, a dead network) and that is survivable: the
+ * object sits in the bucket unreferenced and nothing in the app points at it.
+ * The reverse order would be worse, a document row claiming a file that is not
+ * there.
+ */
+const BUCKET = 'ios-documentos';
+
+const uploadSchema = z.object({
+  document_id: uuid,
+  project_id: uuid,
+  file_name: z.string().min(1).max(300),
+  file_size: z.coerce.number().int().min(1).max(MAX_FILE_BYTES),
+});
+
+export async function createIosDocumentUpload(
+  input: unknown,
+): Promise<ActionResult & { url?: string; path?: string }> {
+  const parsed = uploadSchema.safeParse(input);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    // The size ceiling is the one failure a person can act on, so it gets a
+    // sentence instead of Zod's "Number must be less than or equal to ...".
+    if (issue?.path[0] === 'file_size') {
+      return { ok: false, message: 'El fichero pasa de 50 MB. Enlázalo en vez de subirlo.' };
+    }
+    return { ok: false, message: issue?.message ?? 'Datos no válidos' };
+  }
+  const { document_id, project_id, file_name } = parsed.data;
+  const supabase = createClient();
+
+  // The document must exist AND belong to the project the client claims, or the
+  // key would file the paper of one deal under another.
+  const { data: doc, error: docError } = await supabase
+    .from('ios_documents')
+    .select('id')
+    .eq('id', document_id)
+    .eq('project_id', project_id)
+    .maybeSingle();
+  if (docError) return { ok: false, message: docError.message };
+  if (!doc) return { ok: false, message: 'El documento no existe en este proyecto' };
+
+  const path = storageKey(project_id, document_id, file_name);
+  const { data, error } = await supabase.storage.from(BUCKET).createSignedUploadUrl(path);
+  if (error) return { ok: false, message: error.message };
+
+  return { ok: true, message: 'Subiendo', url: data.signedUrl, path: data.path };
+}
+
+const attachSchema = uploadSchema.extend({ storage_path: z.string().min(1).max(500) });
+
+export async function attachIosDocumentFile(input: unknown): Promise<ActionResult> {
+  const parsed = attachSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos no válidos' };
+  }
+  const { document_id, project_id, storage_path, file_name, file_size } = parsed.data;
+
+  // The same guard as step 1. A signed URL is good for an hour, so the check
+  // cannot live only at the signing end.
+  if (!storage_path.startsWith(`${project_id}/${document_id}/`)) {
+    return { ok: false, message: 'La ruta no corresponde a este documento' };
+  }
+
+  const supabase = createClient();
+  const { data: previous } = await supabase
+    .from('ios_documents')
+    .select('storage_path')
+    .eq('id', document_id)
+    .maybeSingle();
+
+  const { error } = await supabase
+    .from('ios_documents')
+    .update({ storage_path, file_name, file_size, updated_at: new Date().toISOString() })
+    .eq('id', document_id)
+    .eq('project_id', project_id);
+  if (error) return { ok: false, message: error.message };
+
+  // Replacing a file: drop the old object once the row no longer names it. A
+  // failure here leaks an orphan, which is cheap, instead of a dangling row.
+  const old = previous?.storage_path as string | null | undefined;
+  if (old && old !== storage_path) await supabase.storage.from(BUCKET).remove([old]);
+
+  revalidatePath(`/v2/pipeline/${project_id}`);
+  return { ok: true, message: `${file_name} subido` };
+}
+
+export async function removeIosDocumentFile(input: unknown): Promise<ActionResult> {
+  const parsed = z.object({ document_id: uuid, project_id: uuid }).safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos no válidos' };
+  }
+  const { document_id, project_id } = parsed.data;
+  const supabase = createClient();
+
+  // Read the key BEFORE clearing it. A PostgREST `.update().select()` returns
+  // the row as it is after the write, so asking there would hand back the null
+  // we just set and the object would stay in the bucket forever.
+  const { data: current, error: readError } = await supabase
+    .from('ios_documents')
+    .select('storage_path')
+    .eq('id', document_id)
+    .eq('project_id', project_id)
+    .maybeSingle();
+  if (readError) return { ok: false, message: readError.message };
+  if (!current) return { ok: false, message: 'El documento no existe en este proyecto' };
+
+  const { error } = await supabase
+    .from('ios_documents')
+    .update({ storage_path: null, file_name: null, file_size: null, updated_at: new Date().toISOString() })
+    .eq('id', document_id)
+    .eq('project_id', project_id);
+  if (error) return { ok: false, message: error.message };
+
+  const old = current.storage_path as string | null;
+  if (old) await supabase.storage.from(BUCKET).remove([old]);
+
+  revalidatePath(`/v2/pipeline/${project_id}`);
+  return { ok: true, message: 'Fichero quitado' };
 }
 
 // -------------------------------------------------------------- the decision
