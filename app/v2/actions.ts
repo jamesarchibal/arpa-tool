@@ -31,11 +31,16 @@ import {
   GATE_DECISIONS,
   LOI_STATUS,
   PASS_LOST_REASONS,
+  PRIMARY_STRATEGIES,
   PRIORITY,
   PROJECT_TYPES,
+  RATING_LMH,
+  RESEARCH_STATUS,
   STAGES,
   STAGE_DELIVERABLE,
   THESIS_FIT,
+  THESIS_SCOPES,
+  THESIS_STATUS,
 } from '@/lib/ios/lists';
 
 /**
@@ -134,6 +139,10 @@ const updateSchema = z.object({
   full_dd_status: z.enum(FULL_DD_STATUS).optional(),
   closing_status: z.enum(CLOSING_STATUS).optional(),
   open_required_dd_items: z.coerce.number().int().min(0).max(999).optional(),
+  // Their `SharePoint Folder URL`. Typed by hand until the Microsoft app
+  // registration exists; see `docs/entrega-arpa.md`, step 5. The files stay in
+  // SharePoint, this is the way back to them.
+  sharepoint_folder_url: optionalText(1000),
   notes: optionalText(4000),
 });
 
@@ -193,6 +202,47 @@ export async function saveIosDocument(input: unknown): Promise<ActionResult> {
   revalidatePath('/v2/pipeline');
   revalidatePath('/v2');
   return { ok: true, message: 'Documento guardado' };
+}
+
+/**
+ * Move one deliverable's status and nothing else.
+ *
+ * `saveIosDocument` demands every field because it is the editor of the whole
+ * row. The home screen does not have those fields: it lists documents In Review
+ * and the only thing a partner wants to do from there is approve or send back.
+ * Re-posting a full row from a list would mean hiding six inputs behind the
+ * button, and a hidden input is a field that goes stale.
+ *
+ * The project id comes back from the update instead of from the caller, so the
+ * revalidation cannot be pointed at a project the document does not belong to.
+ */
+const docStatusSchema = z.object({ id: uuid, doc_status: z.enum(DOC_STATUS) });
+
+export async function setIosDocumentStatus(input: unknown): Promise<ActionResult> {
+  const parsed = docStatusSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos no válidos' };
+  }
+  const { id, doc_status } = parsed.data;
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from('ios_documents')
+    .update({
+      doc_status,
+      approved_at: doc_status === 'Approved' ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select('project_id')
+    .maybeSingle();
+  if (error) return { ok: false, message: error.message };
+  if (!data) return { ok: false, message: 'El documento no existe' };
+
+  revalidatePath(`/v2/pipeline/${data.project_id as string}`);
+  revalidatePath('/v2/pipeline');
+  revalidatePath('/v2');
+  return { ok: true, message: `Documento en ${doc_status}` };
 }
 
 // -------------------------------------------------------------- the decision
@@ -609,4 +659,172 @@ export async function importSabiCompanies(input: unknown): Promise<SabiImportRes
   revalidatePath('/v2');
   result.message = `${result.created} nuevas, ${result.updated} actualizadas, ${result.unchanged} sin cambios`;
   return result;
+}
+
+// --------------------------------------------------------------- the library
+//
+// The library arrived from their Excel and, until now, could only be changed by
+// re-running the seeder. That is wrong for the part of it that is live research:
+// a subsector is re-rated when somebody reads the market, a thesis is retired,
+// a source is added. Airtable's one honest advantage over V2 was exactly this,
+// that a person could fix a cell without asking an engineer.
+//
+// Two rules hold across all three:
+//
+//   - The natural key is NOT editable. `ios_industries.subsector`,
+//     `ios_theses.code` and the name a company's source points at are what
+//     `scripts/ios-seed.ts` matches on. Rename one here and the next seeding run
+//     inserts a duplicate instead of updating the row.
+//   - The score and the tier are never written. They are derived from the eight
+//     ratings on every read, in `lib/ios/industries.ts`, so saving a new rating
+//     changes the score with no second place to keep in sync.
+//
+// Some of their fields have no CHECK in the database because their own workbook
+// has no closed list for them (`mandate_fit`, `evidence_status`, `category`,
+// `ios_sources.source_type`). Those stay free text here. Offering an invented
+// dropdown would be us deciding their vocabulary for them.
+
+const rating = z.coerce.number().int().min(1).max(5);
+
+/**
+ * An optional closed list, as a `<select>` actually sends it.
+ *
+ * The empty option of a select posts `''`, and `z.enum(...).nullable()` rejects
+ * `''` because it is not one of the values. Without this the only way to clear a
+ * rating would be to leave the field out of the payload, which a form cannot do.
+ */
+const nullableEnum = <T extends readonly [string, ...string[]]>(values: T) =>
+  z.preprocess((v) => (v === '' || v === undefined ? null : v), z.enum(values).nullable());
+
+const industrySchema = z.object({
+  id: uuid,
+  market_growth: rating,
+  fragmentation_addons: rating,
+  target_density: rating,
+  margin_profile: rating,
+  recurring_revenue: rating,
+  barriers: rating,
+  succession: rating,
+  risk_low_is_5: rating,
+  growth_attractiveness: nullableEnum(RATING_LMH),
+  fragmentation: nullableEnum(RATING_LMH),
+  consolidation_potential: nullableEnum(RATING_LMH),
+  research_status: z.enum(RESEARCH_STATUS),
+  investment_thesis: optionalText(4000),
+  key_risks: optionalText(4000),
+  spanish_clusters: optionalText(2000),
+  notes: optionalText(4000),
+});
+
+/** Re-rate one subsector. All eight ratings are required: see the note below. */
+export async function saveIosIndustry(input: unknown): Promise<ActionResult> {
+  const parsed = industrySchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos no válidos' };
+  }
+  const { id, ...fields } = parsed.data;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from('ios_industries')
+    .update({ ...fields, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath('/v2/industrias');
+  revalidatePath('/v2/tesis');
+  revalidatePath('/v2');
+  return { ok: true, message: 'Subsector guardado' };
+}
+
+/**
+ * Their value creation levers are a list, and the form sends it as a textarea
+ * with one lever per line. Splitting here and not in the component because the
+ * column is `not null` and the empty array, not null, is the empty case.
+ */
+const lines = (max: number) =>
+  z
+    .string()
+    .max(max)
+    .optional()
+    .transform((v) =>
+      (v ?? '')
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    );
+
+const thesisSchema = z.object({
+  id: uuid,
+  name: z.string().trim().min(2, 'La tesis necesita un nombre').max(300),
+  scope: z.enum(THESIS_SCOPES),
+  status: z.enum(THESIS_STATUS),
+  priority: nullableEnum(PRIORITY),
+  primary_strategy: nullableEnum(PRIMARY_STRATEGIES),
+  category: optionalText(200),
+  structural_driver: optionalText(2000),
+  description: optionalText(4000),
+  value_creation_levers: lines(4000),
+  ideal_target_profile: optionalText(2000),
+  key_screening_risks: optionalText(2000),
+  mandate_fit: optionalText(200),
+  geographic_focus: optionalText(200),
+  // Text in all 140 of their rows ("1–5 (core 1–3)"), so text here too. A
+  // number column would have to throw their own ranges away on the way in.
+  target_ebitda_eur_m: optionalText(120),
+  target_revenue_eur_m: optionalText(120),
+  evidence_status: optionalText(300),
+});
+
+/** Edit one thesis. The code is the key and is not in the schema. */
+export async function saveIosThesis(input: unknown): Promise<ActionResult> {
+  const parsed = thesisSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos no válidos' };
+  }
+  const { id, ...fields } = parsed.data;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from('ios_theses')
+    .update({ ...fields, updated_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath('/v2/tesis');
+  revalidatePath('/v2/pipeline');
+  revalidatePath('/v2');
+  return { ok: true, message: 'Tesis guardada' };
+}
+
+const sourceSchema = z.object({
+  id: uuid.optional(),
+  name: z.string().trim().min(2, 'La fuente necesita un nombre').max(300),
+  source_type: optionalText(200),
+  url: optionalText(1000),
+  notes: optionalText(4000),
+});
+
+/**
+ * Create or edit a sourcing channel.
+ *
+ * A duplicate name is not caught here, it is caught by the unique index on
+ * `lower(btrim(name))` and surfaces as the database's own message. Checking
+ * first would be a race and a second definition of what "the same source" means.
+ */
+export async function saveIosSource(input: unknown): Promise<ActionResult> {
+  const parsed = sourceSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos no válidos' };
+  }
+  const { id, ...fields } = parsed.data;
+  const supabase = createClient();
+
+  const row = { ...fields, updated_at: new Date().toISOString() };
+  const { error } = id
+    ? await supabase.from('ios_sources').update(row).eq('id', id)
+    : await supabase.from('ios_sources').insert(row);
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath('/v2/sourcing');
+  revalidatePath('/v2');
+  return { ok: true, message: id ? 'Fuente guardada' : 'Fuente creada' };
 }

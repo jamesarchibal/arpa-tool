@@ -3,21 +3,30 @@
 import { useState, useTransition } from 'react';
 
 import { CONFIDENTIALITY, DOC_STATUS, DOC_TYPES } from '@/lib/ios/lists';
-import { saveIosDocument } from '../../actions';
+import { PENDING_MICROSOFT, Pending } from '../../_pending';
+import { saveIosDocument, updateIosProject } from '../../actions';
 
 /**
- * The deliverables, each row editable in place.
+ * The deliverables, each row editable in place, and the folder they live in.
  *
  * The status column is the one that matters: `Approved` is what opens a gate, so
  * this table is where a closed gate gets unblocked. A new version is a new row,
  * which is why the old one should be set to `Superseded` rather than edited: the
  * gate reads the latest non-Superseded document per type.
+ *
+ * The files themselves are NOT here and will not be. The original lives in
+ * SharePoint, where ARPA already has the permissions, the versioning and the
+ * search; this screen keeps the folder it lives in and, per row, the link. Two
+ * copies of a document means two versions, and the good one is always the other
+ * one. `docs/entrega-arpa.md`, step 5.
  */
 export default function Documents({
   projectId,
+  folderUrl,
   documents,
 }: {
   projectId: string;
+  folderUrl: string | null;
   documents: {
     id: string;
     doc_type: string;
@@ -50,6 +59,16 @@ export default function Documents({
     });
   }
 
+  function saveFolder(form: FormData) {
+    start(async () => {
+      const result = await updateIosProject({
+        id: projectId,
+        sharepoint_folder_url: String(form.get('sharepoint_folder_url') ?? ''),
+      });
+      setMessage(result.message);
+    });
+  }
+
   const field =
     'rounded border border-border bg-bg px-2 py-1 text-xs text-ink outline-none focus:border-brand';
 
@@ -70,6 +89,39 @@ export default function Documents({
           {adding ? 'Cancelar' : 'Añadir documento'}
         </button>
       </header>
+
+      {/* The folder, not the files. Typed by hand until Graph can create it. */}
+      <form
+        action={saveFolder}
+        className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3"
+      >
+        <span className="text-[11px] font-semibold text-ink-soft">Carpeta en SharePoint</span>
+        <input
+          name="sharepoint_folder_url"
+          defaultValue={folderUrl ?? ''}
+          placeholder="https://arpapartners.sharepoint.com/..."
+          className={`${field} w-80`}
+        />
+        <button
+          type="submit"
+          disabled={pending}
+          className="rounded-md border border-border px-2.5 py-1.5 text-xs font-semibold text-ink hover:border-strong disabled:opacity-50"
+        >
+          Guardar
+        </button>
+        {folderUrl ? (
+          <a
+            href={folderUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-md border border-border px-2.5 py-1.5 text-xs font-semibold text-brand hover:border-strong"
+          >
+            Abrir carpeta
+          </a>
+        ) : null}
+        <Pending needs={PENDING_MICROSOFT}>Crear la carpeta</Pending>
+        <Pending needs={PENDING_MICROSOFT}>Subir fichero</Pending>
+      </form>
 
       {adding ? (
         <form

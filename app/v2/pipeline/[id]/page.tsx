@@ -298,7 +298,11 @@ export default async function IosProjectPage({
       ) : null}
 
       {tab === 'documentos' ? (
-        <Documents projectId={project.id} documents={documents} />
+        <Documents
+          projectId={project.id}
+          folderUrl={project.sharepoint_folder_url}
+          documents={documents}
+        />
       ) : null}
 
       {tab === 'decisiones' ? (

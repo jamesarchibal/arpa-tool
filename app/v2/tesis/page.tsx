@@ -3,6 +3,7 @@ import { CROSS_SECTOR, filterTheses } from '@/lib/ios/filters';
 import ExportCsv from '../_export-button';
 import FilterBar from '../_filter-bar';
 import { DASH, Pill, Stat } from '../_ui';
+import ThesisEditor from './_editor';
 
 export const dynamic = 'force-dynamic';
 
@@ -150,6 +151,8 @@ export default async function TesisPage({ searchParams }: { searchParams?: Param
             {t.subsectors.length > 0 ? (
               <p className="mt-2 text-[11px] text-ink-faint">{t.subsectors.join(' · ')}</p>
             ) : null}
+
+            <ThesisEditor thesis={t} />
           </article>
         ))}
         {rows.length === 0 ? (

@@ -204,3 +204,50 @@ and a 100 does not open one. `saveIosScore` never writes `stage`,
 `project_status` or `pass_lost_reason`. When a gate scores badly the scorecard
 proposes one of their 12 pass reasons, and proposing is all it does: the real
 reason is chosen when the decision is recorded.
+
+### La biblioteca ya se edita, y los huecos de Microsoft están en su sitio
+
+Hasta ahora la biblioteca era de solo lectura: la única forma de cambiar un
+rating, retirar una tesis o añadir una fuente era editar su Excel y volver a
+ejecutar `scripts/ios-seed.ts`. Eso estaba mal, y era la única ventaja real de
+Airtable sobre V2: una persona podía arreglar una celda sin pedírselo a nadie.
+Ahora se editan los 100 subsectores (los ocho ratings, los tres LMH, el estado
+del research y los textos), las 140 tesis (nombre, ámbito, estado, prioridad,
+estrategia, palancas, perfil, riesgos) y las 22 fuentes, que además aceptan
+filas nuevas, porque un canal de sourcing aparece casi cada semana.
+
+Tres reglas:
+
+- **La clave natural no se edita.** `ios_industries.subsector` y
+  `ios_theses.code` son la clave con la que el sembrador empareja. Renombrarlas
+  haría que la siguiente carga insertara un duplicado en vez de actualizar.
+- **La N:N tesis-subsector tampoco.** Se reconstruye desde su columna
+  `Industries` en cada carga, así que una edición aquí se desharía sola. Ofrecer
+  un control que se deshace es peor que no ofrecerlo.
+- **El score y el tier no son campos.** Se recalculan en cada lectura desde los
+  ocho ratings, así que guardar un 4 donde había un 3 mueve el score y puede
+  mover el tier, sin una segunda copia que discrepe.
+
+Los campos que su propio cuaderno no cierra (`mandate_fit`, `evidence_status`,
+`category`, `ios_sources.source_type`) se quedan como texto libre con los
+valores ya en uso como sugerencias. Un desplegable ahí sería nosotros
+inventándoles el vocabulario, y el valor que necesiten el mes que viene sería
+justo el que no pusimos.
+
+En Mi trabajo, los documentos en revisión se aprueban o se rechazan desde la
+propia lista, y un próximo paso vencido se reescribe sin abrir el proyecto. Lo
+que **no** se hace desde una lista es la decisión de gate: necesita la
+justificación escrita y la checklist delante, así que sigue mandando al
+proyecto. Un "Avanzar" de un clic en una lista es exactamente el desplegable que
+V2 existe para quitar.
+
+Y la parte de Microsoft. No tenemos el registro de aplicación en su tenant, así
+que los cuatro botones que dependen de él están **en su sitio real, visibles y
+desactivados**, cada uno diciendo qué le falta: crear la carpeta del proyecto y
+subir un fichero (pestaña Documentos), pasar el próximo paso a Outlook y traer
+correos y notas de reunión (pestaña Resumen). El fichero no se sube aquí ni se
+subirá: el original vive en SharePoint, donde ARPA ya tiene los permisos, el
+versionado y la búsqueda. Lo que guardamos es la carpeta
+(`ios_projects.sharepoint_folder_url`, hoy escrita a mano, mañana por Graph sin
+cambiar el esquema) y, por documento, el enlace. Dos copias de un documento son
+dos versiones, y la buena es siempre la otra.

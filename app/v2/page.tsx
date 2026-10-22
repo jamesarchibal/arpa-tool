@@ -7,6 +7,7 @@ import {
 } from '@/lib/ios/db';
 import { gateReady } from '@/lib/ios/gates';
 import { STAGE_LABEL } from '@/lib/ios/lists';
+import { DocDecision, NextStepForm } from './_inbox';
 import { DASH, Empty, Panel, Pill, Stat } from './_ui';
 
 export const dynamic = 'force-dynamic';
@@ -82,13 +83,16 @@ export default async function MiTrabajoPage() {
         )}
       </Panel>
 
-      <Panel title="Documentos en revisión" hint="Aprobar uno abre el gate de su etapa.">
+      <Panel
+        title="Documentos en revisión"
+        hint="Aprobar uno abre el gate de su etapa. Se puede hacer desde aquí."
+      >
         {inReview.length === 0 ? (
           <Empty>Ningún documento en revisión.</Empty>
         ) : (
           <ul className="divide-y divide-border">
             {inReview.map((doc) => (
-              <li key={doc.id} className="py-2">
+              <li key={doc.id} className="flex flex-wrap items-center gap-2 py-2">
                 <Link
                   href={`/v2/pipeline/${doc.project_id}?tab=documentos`}
                   className="flex flex-wrap items-baseline gap-2 transition hover:text-brand"
@@ -99,13 +103,17 @@ export default async function MiTrabajoPage() {
                   </Pill>
                   <span className="text-xs text-ink-faint">{doc.title ?? DASH}</span>
                 </Link>
+                <DocDecision id={doc.id} />
               </li>
             ))}
           </ul>
         )}
       </Panel>
 
-      <Panel title="Próximos pasos vencidos" hint="Fecha pasada y el paso sigue abierto.">
+      <Panel
+        title="Próximos pasos vencidos"
+        hint="Fecha pasada y el paso sigue abierto. Se puede reescribir desde aquí."
+      >
         {overdue.length === 0 ? (
           <Empty>Nada vencido.</Empty>
         ) : (
@@ -118,8 +126,13 @@ export default async function MiTrabajoPage() {
                 >
                   <span className="text-sm font-medium text-ink">{p.name}</span>
                   <Pill tone="bad">{p.next_step_due}</Pill>
-                  <span className="truncate text-xs text-ink-mute">{p.next_step ?? DASH}</span>
+                  <span className="text-xs text-ink-faint">{STAGE_LABEL[p.stage]}</span>
                 </Link>
+                <NextStepForm
+                  projectId={p.id}
+                  nextStep={p.next_step}
+                  nextStepDue={p.next_step_due}
+                />
               </li>
             ))}
           </ul>

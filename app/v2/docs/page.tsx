@@ -120,6 +120,8 @@ const SECTIONS: { id: string; title: string; hint: string; body: React.ReactNode
           <li>
             <b className="text-ink">Mi trabajo.</b> Lo que espera una decisión, los documentos en
             revisión y los próximos pasos vencidos. Si solo va a mirar una pantalla al día, es esta.
+            Un documento se aprueba o se rechaza desde la propia lista, y un próximo paso vencido se
+            reescribe sin abrir el proyecto.
           </li>
           <li>
             <b className="text-ink">Industrias.</b> Los 100 subsectores con sus ocho criterios, su
@@ -265,6 +267,35 @@ const SECTIONS: { id: string; title: string; hint: string; body: React.ReactNode
     ),
   },
   {
+    id: 'conexiones',
+    title: 'SharePoint, Outlook y el correo',
+    hint: 'La carpeta sí, el fichero no',
+    body: (
+      <>
+        <P>
+          <b className="text-ink">El fichero no se sube aquí, y no se subirá.</b> El original vive en
+          SharePoint, donde ya están los permisos, el versionado y la búsqueda. Dos copias de un
+          documento son dos versiones, y la buena es siempre la otra. Lo que guarda esta herramienta
+          es el camino de vuelta: la carpeta del proyecto, arriba de la pestaña Documentos, y por
+          cada documento su enlace.
+        </P>
+        <P>
+          Hoy la carpeta se pega a mano y el botón <C>Abrir carpeta</C> la abre en una pestaña nueva.
+          Cuatro botones más están en su sitio y desactivados, porque falta el registro de
+          aplicación en el tenant de ARPA: crear la carpeta del proyecto y subir un fichero, en
+          Documentos, y pasar el próximo paso a Outlook y traer correos y notas de reunión, en
+          Resumen. Cada uno dice al pasar el ratón qué le falta.
+        </P>
+        <Note>
+          Están desactivados a propósito y no escondidos. Un botón que no hace nada al pulsarlo es
+          peor que un hueco, porque se dejan de creer los demás botones. Cuando la conexión exista,
+          cada hueco se convierte en el botón de verdad y la carpeta se rellena sola, sin cambiar
+          nada de lo que ya esté escrito.
+        </Note>
+      </>
+    ),
+  },
+  {
     id: 'descartar',
     title: 'Cómo descartar un proyecto',
     hint: 'Pass, Lost y seguimiento',
@@ -295,7 +326,7 @@ const SECTIONS: { id: string; title: string; hint: string; body: React.ReactNode
   },
   {
     id: 'catalogo',
-    title: 'Cómo leer el catálogo',
+    title: 'Cómo leer y editar el catálogo',
     hint: 'Industrias, Tesis y Sourcing',
     body: (
       <>
@@ -322,6 +353,18 @@ const SECTIONS: { id: string; title: string; hint: string; body: React.ReactNode
           Los filtros llevan el recuento al lado y se acumulan. La cuenta de arriba a la derecha dice
           siempre cuántas filas está viendo del total.
         </P>
+        <P>
+          <b className="text-ink">Editar.</b> Cada subsector tiene un botón <C>Editar</C> a la
+          derecha que abre los ocho ratings, los tres de alto/medio/bajo, el estado del research y
+          los textos. Cada tesis tiene el suyo debajo de la ficha. Las fuentes se editan en la tabla
+          y además aceptan filas nuevas con <C>Añadir fuente</C>.
+        </P>
+        <Note>
+          Tres cosas no se editan, y por el mismo motivo: el nombre del subsector, el código de la
+          tesis y los subsectores de cada tesis son justo lo que empareja la recarga del Excel.
+          Cambiarlos haría que la siguiente carga metiera un duplicado o deshiciera el cambio. La
+          nota y el tier tampoco son campos: se recalculan solos al guardar un rating.
+        </Note>
       </>
     ),
   },

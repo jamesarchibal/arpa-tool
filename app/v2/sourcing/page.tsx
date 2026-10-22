@@ -5,6 +5,7 @@ import { filterArchetypes, filterCompanies } from '@/lib/ios/filters';
 import ExportCsv from '../_export-button';
 import FilterBar from '../_filter-bar';
 import { DASH, Pill, Stat } from '../_ui';
+import Fuentes from './_fuentes';
 import ImportSabi from './_import';
 
 export const dynamic = 'force-dynamic';
@@ -255,46 +256,16 @@ export default async function SourcingPage({ searchParams }: { searchParams?: Pa
         <>
           {/* The 22 sources have nothing to filter by, so this view gets the
               download link on its own instead of inside a FilterBar. */}
-          <div className="mb-4 flex justify-end">
+          <div className="mb-3 flex justify-end">
             <ExportCsv kind="fuentes" />
           </div>
-          <div className="overflow-x-auto rounded-lg border border-border bg-bg-card">
-            <table className="w-full min-w-[700px] text-sm">
-              <thead>
-                <tr className="border-b border-border text-left font-mono text-[10px] uppercase tracking-[0.08em] text-ink-faint">
-                  <th className="px-3 py-2">Fuente</th>
-                  <th className="px-3 py-2">Tipo</th>
-                  <th className="px-3 py-2 text-right">Empresas</th>
-                  <th className="px-3 py-2">Notas</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sources.map((s) => (
-                  <tr key={s.id} className="border-b border-border last:border-0 hover:bg-bg-elevated">
-                    <td className="px-3 py-2 font-medium text-ink">
-                      {s.url ? (
-                        <a
-                          href={s.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="hover:text-brand hover:underline"
-                        >
-                          {s.name}
-                        </a>
-                      ) : (
-                        s.name
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-ink-mute">{s.source_type ?? DASH}</td>
-                    <td className="px-3 py-2 text-right font-mono text-xs text-ink">
-                      {companies.filter((c) => c.source === s.name).length}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-ink-faint">{s.notes ?? DASH}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Fuentes
+            sources={sources}
+            counts={companies.reduce<Record<string, number>>((out, c) => {
+              if (c.source) out[c.source] = (out[c.source] ?? 0) + 1;
+              return out;
+            }, {})}
+          />
         </>
       ) : null}
     </>

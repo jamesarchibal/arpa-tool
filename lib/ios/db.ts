@@ -74,6 +74,8 @@ export interface IosIndustry {
   investment_thesis: string | null;
   key_risks: string | null;
   spanish_clusters: string | null;
+  research_status: string;
+  notes: string | null;
   /** Derived, never stored. */
   score: number;
   tier: IndustryTier;
@@ -255,6 +257,8 @@ export interface IosProject {
   pass_lost_reason: string | null;
   decisive_evidence: string | null;
   notes: string | null;
+  /** Their `SharePoint Folder URL`. The files live there, never here. */
+  sharepoint_folder_url: string | null;
   updated_at: string;
   thesis_code: string | null;
   thesis_name: string | null;

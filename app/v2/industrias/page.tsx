@@ -4,7 +4,8 @@ import { INDUSTRY_CRITERIA } from '@/lib/ios/industries';
 import { TIER_LABEL } from '@/lib/ios/lists';
 import ExportCsv from '../_export-button';
 import FilterBar from '../_filter-bar';
-import { DASH, Rating, Stat, TierPill } from '../_ui';
+import { Stat } from '../_ui';
+import IndustryRows from './_rows';
 
 export const dynamic = 'force-dynamic';
 
@@ -97,39 +98,10 @@ export default async function IndustriasPage({
                   {c.label.split(' ')[0]}
                 </th>
               ))}
+              <th className="px-3 py-2 text-right">Editar</th>
             </tr>
           </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id} className="border-b border-border last:border-0 hover:bg-bg-elevated">
-                <td className="px-3 py-2">
-                  <div className="font-medium text-ink">{r.subsector}</div>
-                  {r.spanish_clusters ? (
-                    <div className="text-[11px] text-ink-faint">{r.spanish_clusters}</div>
-                  ) : null}
-                </td>
-                <td className="px-3 py-2 text-xs text-ink-mute">{r.sector}</td>
-                <td className="px-3 py-2 text-right font-mono font-semibold text-ink">
-                  {r.score.toFixed(2)}
-                </td>
-                <td className="px-3 py-2">
-                  <TierPill tier={r.tier} />
-                </td>
-                {INDUSTRY_CRITERIA.map((c) => (
-                  <td key={c.key} className="px-3 py-2">
-                    <Rating value={r[c.key]} />
-                  </td>
-                ))}
-              </tr>
-            ))}
-            {rows.length === 0 ? (
-              <tr>
-                <td colSpan={12} className="px-3 py-6 text-center text-sm text-ink-faint">
-                  Ningún subsector con esos filtros. {DASH}
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
+          <IndustryRows rows={rows} />
         </table>
       </div>
     </>

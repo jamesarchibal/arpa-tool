@@ -12,6 +12,7 @@ import {
   type GateDecision,
   type Stage,
 } from '@/lib/ios/lists';
+import { PENDING_MICROSOFT, Pending } from '../../_pending';
 import { recordGateDecision, updateIosProject } from '../../actions';
 
 /**
@@ -188,7 +189,7 @@ export default function GatePanel({
               className={field}
             />
           </label>
-          <div className="col-span-2">
+          <div className="col-span-2 flex flex-wrap items-center gap-2">
             <button
               type="submit"
               disabled={pending}
@@ -196,6 +197,11 @@ export default function GatePanel({
             >
               Guardar datos del gate
             </button>
+            {/* Steps 6 and 7 of the delivery. The next step becomes an Outlook
+                event and the mail and meeting notes become Interactions, both
+                through Graph, both waiting on the same app registration. */}
+            <Pending needs={PENDING_MICROSOFT}>Pasar el próximo paso a Outlook</Pending>
+            <Pending needs={PENDING_MICROSOFT}>Traer correos y notas de reunión</Pending>
           </div>
         </form>
       </section>
