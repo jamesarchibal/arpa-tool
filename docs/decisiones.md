@@ -176,3 +176,31 @@ hatch is `scripts/q.mjs` patching `ios_projects.stage` by hand. It is not a
 dropdown in the interface, and that is deliberate: a board you can drag is a
 board whose funnel numbers mean nothing, which is the complaint their own
 document opens with.
+
+### Scoring came late, and that was our omission, not a scope cut
+
+V2 shipped without the scorecard. The reason is an order-of-work decision that
+never got written down as a scope one: V2 was built around the gate, their
+`Gate Ready?` formula reads document statuses and never a score, so the
+scorecard never blocked anything and never got ported. Their spec has it, and V1
+already matched it criterion for criterion. Closed in
+`20261022_arpa_ios_v9_scoring.sql` plus `lib/ios/scoring.ts`.
+
+Two deliberate differences from V1:
+
+- **No derived ratings.** V1 guesses some of the sixteen from the project's
+  financials. `ios_projects` has no financial columns, because per-period
+  Financials is out of V2 scope, and their own sheet asks a human for all
+  sixteen anyway.
+- **A gate score is blank until every one of its criteria is rated**, which is
+  their rule verbatim. V1 renormalises over the answered ones, which let a gate
+  that is 30% filled in report 90/100 and outrank a diligenced 82. Without the
+  derivation that failure mode is not worth inheriting.
+
+`lib/ios/scoring.test.ts` pins V2's weights to V1's `MODELS` by assertion, so
+the two halves of the product cannot quietly disagree about what a QSS of 78
+means. **Nothing in the scorecard touches the gate**: a 40 does not close one
+and a 100 does not open one. `saveIosScore` never writes `stage`,
+`project_status` or `pass_lost_reason`. When a gate scores badly the scorecard
+proposes one of their 12 pass reasons, and proposing is all it does: the real
+reason is chosen when the decision is recorded.

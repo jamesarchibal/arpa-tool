@@ -16,6 +16,7 @@ import { createClient } from '@/lib/supabase/server';
 
 import { industryScore, industryTier, type IndustryTier } from './industries.ts';
 import type { GateFacts } from './gates.ts';
+import type { Ratings } from './scoring.ts';
 import type {
   ClosingStatus,
   DocStatus,
@@ -333,12 +334,34 @@ export interface IosDecision {
   decisive_evidence: string | null;
 }
 
+export interface IosScorecard {
+  project_id: string;
+  /** keyed `<gate>_<criterion>`, value 1-5. An absent key is unrated. */
+  ratings: Ratings;
+  /** ticked kill criteria, k1..k13 */
+  kills: string[];
+  notes: string | null;
+  scored_by: string | null;
+  updated_at: string;
+}
+
+/** The empty scorecard. A project with no row has rated nothing, not zero. */
+export const BLANK_SCORECARD = (projectId: string): IosScorecard => ({
+  project_id: projectId,
+  ratings: {},
+  kills: [],
+  notes: null,
+  scored_by: null,
+  updated_at: '',
+});
+
 export interface IosProjectDetail {
   project: IosProject;
   facts: GateFacts;
   documents: IosDocument[];
   perimeter: IosPerimeterRow[];
   decisions: IosDecision[];
+  scorecard: IosScorecard;
 }
 
 /** Null when the id is not a project, so the page can call notFound(). */
@@ -353,7 +376,7 @@ export async function getIosProjectDetail(id: string): Promise<IosProjectDetail 
   if (project.error) throw new Error(`ios_projects: ${project.error.message}`);
   if (!project.data) return null;
 
-  const [facts, documents, perimeter, decisions] = await Promise.all([
+  const [facts, documents, perimeter, decisions, scorecard] = await Promise.all([
     getGateFacts(id),
     supabase
       .from('ios_documents')
@@ -371,11 +394,13 @@ export async function getIosProjectDetail(id: string): Promise<IosProjectDetail 
       .select('*')
       .eq('project_id', id)
       .order('decided_at', { ascending: false }),
+    supabase.from('ios_project_scores').select('*').eq('project_id', id).maybeSingle(),
   ]);
 
   if (documents.error) throw new Error(`ios_documents: ${documents.error.message}`);
   if (perimeter.error) throw new Error(`ios_project_companies: ${perimeter.error.message}`);
   if (decisions.error) throw new Error(`ios_gate_decisions: ${decisions.error.message}`);
+  if (scorecard.error) throw new Error(`ios_project_scores: ${scorecard.error.message}`);
   if (!facts) throw new Error(`ios_project_gate_facts: no row for project ${id}`);
 
   type RawPerimeter = Omit<
@@ -404,7 +429,19 @@ export async function getIosProjectDetail(id: string): Promise<IosProjectDetail 
       }),
     ),
     decisions: (decisions.data ?? []) as IosDecision[],
+    scorecard: (scorecard.data as IosScorecard | null) ?? BLANK_SCORECARD(id),
   };
+}
+
+/**
+ * Every scorecard at once, keyed by project, for the board. One query instead of
+ * one per card: the pipeline shows all nine columns on one page.
+ */
+export async function getIosScorecards(): Promise<Map<string, IosScorecard>> {
+  const rows = await fetchAll<IosScorecard>('ios_project_scores', '*', {
+    column: 'project_id',
+  });
+  return new Map(rows.map((r) => [r.project_id, r]));
 }
 
 /**

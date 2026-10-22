@@ -1,7 +1,13 @@
 import Link from 'next/link';
 
-import { getIosLongList, getIosProjects, getIosTheses } from '@/lib/ios/db';
+import {
+  getIosLongList,
+  getIosProjects,
+  getIosScorecards,
+  getIosTheses,
+} from '@/lib/ios/db';
 import { STAGES, STAGE_LABEL } from '@/lib/ios/lists';
+import { scoreProject } from '@/lib/ios/scoring';
 import ExportCsv from '../_export-button';
 import { DASH, Pill } from '../_ui';
 import NewProject from './_new-project';
@@ -25,11 +31,25 @@ const STATUS_TONE: Record<string, string> = {
   'Closed Won': 'brand',
 };
 
+/**
+ * Keyed by `ModelResult.outcome`. The card shows the furthest gate a human has
+ * finished, not the stage's own gate: a project sitting in Assessment with its
+ * QSS at 92 and its OM half filled in should read 92, because that is the last
+ * thing anybody actually decided.
+ */
+const SCORE_TONE: Record<number, string> = {
+  [-1]: 'neutral',
+  0: 'good',
+  1: 'warn',
+  2: 'bad',
+};
+
 export default async function PipelinePage() {
-  const [projects, theses, companies] = await Promise.all([
+  const [projects, theses, companies, scorecards] = await Promise.all([
     getIosProjects(),
     getIosTheses(),
     getIosLongList(),
+    getIosScorecards(),
   ]);
 
   const live = projects.filter(
@@ -66,7 +86,12 @@ export default async function PipelinePage() {
                 <span className="font-mono text-[10px] text-ink-faint">{rows.length}</span>
               </header>
               <div className="space-y-2 p-2">
-                {rows.map((p) => (
+                {rows.map((p) => {
+                  const card = scorecards.get(p.id);
+                  const gate = card
+                    ? scoreProject(card.ratings, card.kills).furthest
+                    : null;
+                  return (
                   <Link
                     key={p.id}
                     href={`/v2/pipeline/${p.id}`}
@@ -78,14 +103,27 @@ export default async function PipelinePage() {
                         {p.project_status}
                       </Pill>
                     </div>
-                    <div className="mt-1 text-[11px] text-ink-faint">
-                      {p.thesis_code ?? 'sin tesis'} · {p.owner ?? 'sin responsable'}
+                    <div className="mt-1 flex items-center gap-1.5 text-[11px] text-ink-faint">
+                      {gate ? (
+                        <Pill
+                          tone={SCORE_TONE[gate.outcome]}
+                          title={`${gate.name} · ${gate.verdict}`}
+                        >
+                          {gate.name.replace(' Score', '')} {gate.score ?? DASH}
+                        </Pill>
+                      ) : (
+                        <span className="text-ink-faint">sin puntuar</span>
+                      )}
+                      <span>
+                        {p.thesis_code ?? 'sin tesis'} · {p.owner ?? 'sin responsable'}
+                      </span>
                     </div>
                     <div className="mt-1 truncate text-[11px] text-ink-mute">
                       {p.next_step ? `Próximo: ${p.next_step}` : `Próximo paso ${DASH}`}
                     </div>
                   </Link>
-                ))}
+                  );
+                })}
                 {rows.length === 0 ? (
                   <p className="px-1 py-2 text-[11px] text-ink-faint">Vacía</p>
                 ) : null}

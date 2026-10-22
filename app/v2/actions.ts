@@ -21,6 +21,7 @@ import {
   toLongListDraft,
   type ExistingCompany,
 } from '@/lib/ios/sabi-import';
+import { KILL_IDS, RATING_KEYS, scoreProject } from '@/lib/ios/scoring';
 import {
   CLOSING_STATUS,
   CONFIDENTIALITY,
@@ -367,6 +368,58 @@ export async function addIosPerimeterCompany(input: unknown): Promise<ActionResu
   if (error) return { ok: false, message: error.message };
   revalidatePath(`/v2/pipeline/${parsed.data.project_id}`);
   return { ok: true, message: 'Empresa añadida al perímetro' };
+}
+
+// ----------------------------------------------------------------- the score
+
+/**
+ * The sixteen ratings and the thirteen kill ticks for one project.
+ *
+ * Note what this does NOT do: it never writes `stage`, `project_status` or
+ * `pass_lost_reason`. A gate score is an input a person forms a view with, not a
+ * decision. Their `Gate Ready?` formula does not read the score either, so a 40
+ * on QSS does not close the gate: it just means the next Advance should be very
+ * hard to justify in the rationale box, which is where the judgement belongs.
+ */
+const scoreSchema = z.object({
+  project_id: uuid,
+  // Partial on purpose: the form posts only the criteria that carry a value, and
+  // an absent key means unrated. A `.default(null)` here would quietly turn "not
+  // measured" into a number, which is the one thing their blank-until-complete
+  // rule exists to prevent.
+  ratings: z.record(z.enum(RATING_KEYS as [string, ...string[]]), z.coerce.number().int().min(1).max(5)),
+  kills: z.array(z.enum(KILL_IDS as [string, ...string[]])).max(13),
+  notes: optionalText(2000),
+  scored_by: optionalText(120),
+});
+
+export async function saveIosScore(input: unknown): Promise<ActionResult> {
+  const parsed = scoreSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, message: parsed.error.issues[0]?.message ?? 'Datos no válidos' };
+  }
+  const { project_id, ...fields } = parsed.data;
+  const supabase = createClient();
+
+  const { error } = await supabase
+    .from('ios_project_scores')
+    .upsert({ project_id, ...fields, updated_at: new Date().toISOString() }, {
+      onConflict: 'project_id',
+    });
+  if (error) return { ok: false, message: error.message };
+
+  revalidatePath(`/v2/pipeline/${project_id}`);
+  revalidatePath('/v2/pipeline');
+  revalidatePath('/v2');
+
+  const { models } = scoreProject(parsed.data.ratings, parsed.data.kills);
+  const done = models.filter((m) => m.score !== null);
+  return {
+    ok: true,
+    message: done.length
+      ? `Guardado · ${done.map((m) => `${m.name} ${m.score}`).join(' · ')}`
+      : 'Guardado. Ninguna puerta está completa todavía.',
+  };
 }
 
 // ------------------------------------------------------------ the SABI import

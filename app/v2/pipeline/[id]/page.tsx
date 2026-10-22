@@ -5,9 +5,11 @@ import { getIosLongList, getIosProjectDetail, getIosTheses } from '@/lib/ios/db'
 import { gateReady } from '@/lib/ios/gates';
 import { GATE_ALLOWED, STAGES, STAGE_LABEL } from '@/lib/ios/lists';
 import { DASH, Pill } from '../../_ui';
+import { scoreProject } from '@/lib/ios/scoring';
 import Documents from './_documents';
 import GatePanel from './_gate-panel';
 import AddPerimeter from './_perimeter';
+import Scoring from './_scoring';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,6 +22,7 @@ export const dynamic = 'force-dynamic';
  */
 const TABS = [
   { key: 'resumen', label: 'Resumen' },
+  { key: 'puntuacion', label: 'Puntuación' },
   { key: 'tesis', label: 'Tesis' },
   { key: 'perimetro', label: 'Perímetro' },
   { key: 'documentos', label: 'Documentos' },
@@ -35,6 +38,14 @@ const STATUS_TONE: Record<string, string> = {
   Passed: 'bad',
   'Closed Lost': 'bad',
   'Closed Won': 'brand',
+};
+
+/** Keyed by `ModelResult.outcome`: -1 none, 0 proceed, 1 monitor, 2 pass. */
+const SCORE_TONE: Record<number, string> = {
+  [-1]: 'neutral',
+  0: 'good',
+  1: 'warn',
+  2: 'bad',
 };
 
 const DOC_TONE: Record<string, string> = {
@@ -78,8 +89,9 @@ export default async function IosProjectPage({
   const detail = await getIosProjectDetail(params.id);
   if (!detail) notFound();
 
-  const { project, facts, documents, perimeter, decisions } = detail;
+  const { project, facts, documents, perimeter, decisions, scorecard } = detail;
   const readiness = gateReady(facts);
+  const score = scoreProject(scorecard.ratings, scorecard.kills);
   const tab: TabKey = TABS.find((t) => t.key === searchParams?.tab)?.key ?? 'resumen';
 
   // Only the tab on screen pays for its list: 140 theses and 258 companies are
@@ -107,6 +119,14 @@ export default async function IosProjectPage({
             <Pill tone={STATUS_TONE[project.project_status] ?? 'neutral'}>
               {project.project_status}
             </Pill>
+            {score.furthest ? (
+              <Pill
+                tone={SCORE_TONE[score.furthest.outcome]}
+                title={`${score.furthest.name} · ${score.furthest.question}`}
+              >
+                {score.furthest.name} {score.furthest.score ?? DASH} · {score.furthest.verdict}
+              </Pill>
+            ) : null}
             <Pill tone={readiness.ready ? 'good' : 'bad'}>
               {readiness.ready ? 'Gate abierto' : 'Gate cerrado'}
             </Pill>
@@ -156,6 +176,17 @@ export default async function IosProjectPage({
           ready={readiness.ready}
           allowed={GATE_ALLOWED[project.stage]}
           theses={theses.map((t) => ({ id: t.id, code: t.code, name: t.name }))}
+        />
+      ) : null}
+
+      {tab === 'puntuacion' ? (
+        <Scoring
+          projectId={project.id}
+          ratings={scorecard.ratings}
+          kills={scorecard.kills}
+          notes={scorecard.notes}
+          scoredBy={scorecard.scored_by}
+          updatedAt={scorecard.updated_at}
         />
       ) : null}
 
